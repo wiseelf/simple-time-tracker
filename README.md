@@ -133,6 +133,27 @@ The icon is rendered with `NSImage.SymbolConfiguration(paletteColors:)` to bake 
 - **Menu bar label colors** are stripped by macOS — always use `NSStatusItem` with a custom-drawn `NSImage` for colored items.
 - **`onChange(of:)`** — use the single-argument form `{ newValue in }` for macOS 13 compatibility. The two-argument form `{ _, new in }` requires macOS 14+.
 
+## Install
+
+Download the latest **TimeTracker.dmg** from the [Releases](../../releases) page, open it, and drag `TimeTracker.app` to your Applications folder.
+
+### Gatekeeper — first launch
+
+This build is ad-hoc signed (no Apple Developer certificate). macOS will block it on first launch. Use either option to allow it — you only need to do this once.
+
+**Option A — System Settings** (macOS 14 Sonoma and later)
+1. Try to open the app — it will be blocked.
+2. Open **System Settings → Privacy & Security** and scroll down.
+3. Click **"Open Anyway"** next to TimeTracker and confirm with your password.
+
+**Option B — Terminal** (any macOS version)
+```bash
+xattr -dr com.apple.quarantine /Applications/TimeTracker.app
+```
+Then open the app normally.
+
+> For a fully trusted build with no Gatekeeper prompt, the app must be signed with a Developer ID certificate and notarized with Apple ($99/year Apple Developer Program).
+
 ## Contributing
 
 Every new feature or bug fix must be developed on a dedicated branch and submitted as a merge (pull) request for review before merging into `main`. See [CONTRIBUTING](#contributing-workflow) below.

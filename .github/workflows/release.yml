@@ -106,9 +106,22 @@ jobs:
 
             1. Download **TimeTracker.dmg** below.
             2. Open the DMG and drag `TimeTracker.app` to your Applications folder.
-            3. On first launch: **right-click → Open → Open** to bypass Gatekeeper (ad-hoc signed build).
+            3. Bypass Gatekeeper using one of the options below (ad-hoc signed build).
 
-            > For a fully trusted build without the Gatekeeper prompt, sign with a Developer ID certificate.
+            ### Gatekeeper — first launch
+
+            **Option A — System Settings** (macOS 14+)
+            - Try to open the app — it will be blocked.
+            - Go to **System Settings → Privacy & Security**, scroll down.
+            - Click **"Open Anyway"** next to the TimeTracker entry and confirm with your password.
+
+            **Option B — Terminal** (any macOS version)
+            ```bash
+            xattr -dr com.apple.quarantine /Applications/TimeTracker.app
+            ```
+            Then open the app normally. The warning will never appear again.
+
+            > For a fully trusted build with no Gatekeeper prompt at all, the app needs to be signed with a Developer ID certificate and notarized with Apple.
           files: dist/TimeTracker.dmg
           draft: false
           prerelease: false
