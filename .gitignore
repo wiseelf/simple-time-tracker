@@ -1,0 +1,37 @@
+# Swift Package Manager
+.build/
+*.o
+*.d
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+.swiftpm/
+
+# macOS
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Build output
+dist/
+
+# Editor
+.cursor/
+.vscode/
+*.swp
+*.swo
+*.orig
+
+# Env / secrets
+.env
+*.pem
+*.p12
+*.p8

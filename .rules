@@ -1,0 +1,64 @@
+# TimeTracker — Project Rules & Memory
+
+## What this app is
+A native macOS menu bar time tracker. No Dock icon. No screenshots. No activity monitoring.
+Just a timer with start/stop, manual time entry, and daily/weekly/monthly statistics.
+
+## Stack
+- Swift + SwiftUI, minimum macOS 13
+- Swift Package Manager (no Xcode project)
+- Run with: `swift run` | Build: `swift build -c release`
+
+## Architecture
+
+### Entry point
+`main.swift` — creates `NSApplication`, sets `.accessory` activation policy (hides Dock icon), attaches `AppDelegate`, calls `app.run()`.
+Do NOT use `@main` App struct — it conflicts with `main.swift`.
+
+### AppDelegate
+Owns the `NSStatusItem` and the `NSPanel` popup.
+- Status bar button image is a custom-drawn `NSImage` (non-template) with pill border, colored icon and time text.
+- Popup is an `NSPanel` (`.borderless` + `.nonactivatingPanel`) with `NSVisualEffectView` (`.popover` material, corner radius 12) as content background.
+- Panel is positioned flush below the menu bar button using `button.window?.convertToScreen(...)` + `setFrameTopLeftPoint`.
+- Panel dismissal: global `NSEvent` monitor (clicks outside) + `NSApplication.didResignActiveNotification` (Cmd+Tab / app switch). Both are removed in `closePanel()`.
+
+### TimerManager (singleton)
+`TimerManager.shared` — `ObservableObject`.
+- `start()` / `stop()` / `reset()` / `addTime(hours:minutes:)`.
+- On `stop()`: records the delta since last save as a `TimeSession` in `SessionStore`.
+- On `addTime()`: records a manual `TimeSession` immediately.
+- `loadTodayTime()` — called once at launch to seed `elapsedSeconds` with today's already-tracked total.
+
+### SessionStore (singleton)
+`SessionStore.shared` — `ObservableObject`.
+- Persists to `~/Library/Application Support/TimeTracker/sessions.json` (ISO-8601 dates).
+- Key queries: `sessions(on:)`, `sessions(weekOffset:)`, `sessions(monthOffset:)`, `totalSeconds(in:)`.
+
+### Menu bar icon colors
+- **Idle** (no time): `labelColor` (adapts to light/dark)
+- **Running**: `systemGreen`
+- **Paused with time**: `systemOrange`
+Icon is drawn with `NSImage.SymbolConfiguration(paletteColors:)` to bake color in.
+Text is drawn via `NSAttributedString` with explicit `.foregroundColor`.
+Everything (icon + time) is inside a pill drawn with `NSBezierPath(roundedRect:)`.
+
+### ContentView tabs
+Timer tab | Stats tab — `Picker` with `.segmented` style.
+
+### StatsView
+- Always shows "Today" total at top.
+- `Picker` for Week / Month.
+- `‹ label ⌄ ›` navigation row: arrows step ±1, label is a `Menu` dropdown listing all periods with data.
+- Week/month offsets are independent state (switching tabs preserves position).
+- Future navigation disabled (`offset >= 0`).
+
+## Key patterns
+- SF Symbol coloring in off-screen `NSImage`: use `NSImage.SymbolConfiguration(paletteColors:)` — NOT `contentTintColor`, NOT `attributedTitle`, NOT `destinationIn` compositing.
+- `MenuBarExtra` label colors are stripped by macOS — always use `NSStatusItem` with custom-drawn `NSImage` for colored menu bar items.
+- `onChange(of:)` — use single-arg form `{ newValue in }` for macOS 13 compatibility. Two-arg form `{ _, new in }` requires macOS 14+.
+
+## Git workflow
+- Every new feature or bug fix MUST be developed on a dedicated branch created from `main`.
+- Branch naming: `feature/<short-description>` or `fix/<short-description>`.
+- Once work is complete, push the branch and open a pull/merge request against `main`.
+- Direct commits to `main` are not allowed.
