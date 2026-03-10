@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import UserNotifications
 
 private final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -13,10 +14,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelAnchorTop: CGFloat = 0
     private var eventMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
+    var suppressAutoClose = false
+
+    /// Temporarily lowers the panel below alerts/sheets, runs `block`, then restores the level.
+    func withPanelLowered<T>(_ block: () -> T) -> T {
+        let saved = panel?.level ?? .popUpMenu
+        panel?.level = .normal
+        let result = block()
+        panel?.level = saved
+        return result
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if Bundle.main.bundleIdentifier != nil {
+            let center = UNUserNotificationCenter.current()
+            center.delegate = self
+            center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
+
         let manager = TimerManager.shared
         manager.loadTodayTime()
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(systemWillSleep),
+            name: NSWorkspace.willSleepNotification, object: nil
+        )
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(systemWillSleep),
+            name: NSNotification.Name("com.apple.screensaver.didstart"), object: nil
+        )
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return }
@@ -162,6 +188,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Close on any click outside the panel
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard self?.suppressAutoClose != true else { return }
             self?.closePanel()
         }
 
@@ -196,6 +223,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func appResignedActive() {
+        guard !suppressAutoClose else { return }
         closePanel()
+    }
+
+    @objc private func systemWillSleep(_ notification: Notification) {
+        let reason = notification.name.rawValue.contains("screensaver")
+            ? "Screensaver activated"
+            : "Mac went to sleep"
+        TimerManager.shared.stop(reason: reason)
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
     }
 }

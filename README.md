@@ -1,14 +1,18 @@
 # Simple Time Tracker
 
-A lightweight native macOS menu bar app for tracking time. No Dock icon, no background monitoring — just a clean timer with manual entry and daily/weekly/monthly statistics.
+A lightweight native macOS menu bar app for tracking time. No Dock icon, no background monitoring — just a clean timer with manual entry, visual timeline, and daily/weekly/monthly statistics.
 
 ## Features
 
 - **Menu bar timer** — lives entirely in the menu bar, no Dock icon
-- **Start / Stop / Reset** — track time for any task with a single click or `Space`
-- **Manual entry** — add time retroactively (hours + minutes)
+- **Start / Stop / Reset** — track time with a single click or `Space`
+- **Manual entry (duration)** — add time retroactively by specifying hours + minutes
+- **Manual entry (range)** — add time by picking a From / To time with a custom HH:MM picker and a 24-hour visual timeline
+- **Auto-stop on sleep / screensaver** — timer stops automatically when the Mac sleeps or the screensaver activates; a system notification is sent
 - **Persistent sessions** — time is saved automatically; today's total is restored on relaunch
-- **Statistics** — view totals by day, week, or month with backwards navigation
+- **Statistics** — bar chart of tracked time per day (week view) or per week (month view), with period total and daily average
+- **Export / Import** — back up all sessions to a JSON file and restore (merge or replace) on any machine
+- **System notifications** — notified when the timer starts, stops, or is auto-stopped
 - **Adaptive icon** — green (running), orange (paused with time), default (idle)
 
 ## Requirements
@@ -31,7 +35,9 @@ swift build -c release
 # Binary output: .build/release/TimeTracker
 ```
 
-No additional dependencies — the project uses only Apple frameworks (AppKit, SwiftUI, Combine, Foundation).
+No additional dependencies — the project uses only Apple frameworks (AppKit, SwiftUI, Combine, Foundation, UserNotifications).
+
+> **Note:** System notifications require a proper `.app` bundle with a bundle identifier. They are silently skipped when running via `swift run`.
 
 ## Project Structure
 
@@ -39,13 +45,15 @@ No additional dependencies — the project uses only Apple frameworks (AppKit, S
 simple-time-tracker/
 ├── Package.swift
 └── Sources/TimeTracker/
-    ├── main.swift          # Entry point — NSApplication setup
-    ├── AppDelegate.swift   # Status bar item + popup panel lifecycle
-    ├── ContentView.swift   # Main SwiftUI view (Timer tab + Stats tab)
-    ├── StatsView.swift     # Statistics view with week/month navigation
-    ├── TimerManager.swift  # Timer logic (ObservableObject singleton)
-    ├── SessionStore.swift  # Persistence layer (ObservableObject singleton)
-    └── TimeSession.swift   # Codable model for a single tracked session
+    ├── main.swift              # Entry point — NSApplication setup
+    ├── AppDelegate.swift       # Status bar item + popup panel lifecycle + sleep/screensaver observers
+    ├── ContentView.swift       # Main SwiftUI view (Timer tab + Stats tab)
+    ├── StatsView.swift         # Bar-chart statistics view with export/import
+    ├── DayTimelineView.swift   # 24-hour visual timeline for range entry
+    ├── TimePickerField.swift   # Custom NSViewRepresentable HH:MM time input
+    ├── TimerManager.swift      # Timer logic (ObservableObject singleton)
+    ├── SessionStore.swift      # Persistence layer (ObservableObject singleton)
+    └── TimeSession.swift       # Codable model for a single tracked session
 ```
 
 ## Architecture
@@ -61,9 +69,11 @@ Creates `NSApplication`, sets the activation policy to `.accessory` (hides the D
 Owns the `NSStatusItem` and the floating `NSPanel` popup.
 
 - **Status bar button** — a custom-drawn `NSImage` (non-template) rendered off-screen. Contains a pill border, an SF Symbol icon, and the current time text, all colored according to timer state.
-- **Popup panel** — an `NSPanel` with `.borderless` + `.nonactivatingPanel` style masks. The background is an `NSVisualEffectView` with `.popover` material and a 12 pt corner radius (frosted glass effect).
+- **Popup panel** — a `KeyablePanel: NSPanel` subclass (overrides `canBecomeKey` / `canBecomeMain` to `true`) with `.borderless` + `.nonactivatingPanel` style masks. The background is an `NSVisualEffectView` with `.popover` material and a 12 pt corner radius (frosted glass effect). `canBecomeKey = true` is required for SwiftUI `TextField` focus to work in a borderless panel.
 - **Panel positioning** — placed flush below the menu bar button using `button.window?.convertToScreen(...)` + `setFrameTopLeftPoint`.
-- **Panel dismissal** — a global `NSEvent` monitor handles outside clicks; `NSApplication.didResignActiveNotification` handles Cmd+Tab / app switches. Both are cleaned up in `closePanel()`.
+- **Panel dismissal** — a global `NSEvent` monitor handles outside clicks; `NSApplication.didResignActiveNotification` handles Cmd+Tab / app switches. Both are suppressed via `suppressAutoClose` while file-picker or alert modals are open.
+- **Auto-stop** — observes `NSWorkspace.willSleepNotification` and `com.apple.screensaver.didstart` (via `DistributedNotificationCenter`), calling `TimerManager.stop(reason:)`.
+- **Notifications** — sets itself as `UNUserNotificationCenterDelegate` and requests `.alert` + `.sound` authorization on launch (when a bundle identifier is present). The delegate allows banners to appear while the app is active.
 
 ### `TimerManager` (singleton)
 
@@ -71,10 +81,11 @@ Owns the `NSStatusItem` and the floating `NSPanel` popup.
 
 | Method | Description |
 |---|---|
-| `start()` | Starts a `Timer` firing every second, records `segmentStartDate` |
-| `stop()` | Invalidates timer, calculates delta since last save, writes a `TimeSession` |
+| `start()` | Starts a `Timer` firing every second, records `segmentStartDate`, sends a start notification |
+| `stop(reason:)` | Invalidates timer, calculates delta since last save, writes a `TimeSession`, sends a stop notification |
 | `reset()` | Stops and zeroes all counters |
-| `addTime(hours:minutes:)` | Records a manual `TimeSession` immediately |
+| `addTime(hours:minutes:)` | Finds the latest free slot today and records a manual `TimeSession` (throws `ManualEntryError`) |
+| `addTimeRange(start:end:)` | Records a manual `TimeSession` for an explicit time range; validates today-only, start < end, not in future, no overlap (throws `ManualEntryError`) |
 | `loadTodayTime()` | Called once at launch to seed `elapsedSeconds` with today's saved total |
 
 ### `SessionStore` (singleton)
@@ -84,12 +95,17 @@ Owns the `NSStatusItem` and the floating `NSPanel` popup.
 - Persists to `~/Library/Application Support/TimeTracker/sessions.json` (ISO-8601 dates).
 - Sessions are always kept sorted by `startDate`.
 
-| Query | Description |
+| Method | Description |
 |---|---|
 | `sessions(on:)` | All sessions for a given calendar day |
-| `sessions(weekOffset:)` | Sessions for the week at `offset` from the current week (0 = this week, -1 = last week, …) |
+| `sessions(weekOffset:)` | Sessions for the week at `offset` from the current week |
 | `sessions(monthOffset:)` | Sessions for the month at `offset` from the current month |
 | `totalSeconds(in:)` | Sums `duration` across a session array |
+| `hasOverlap(start:end:)` | Returns `true` if a time range overlaps any existing session today |
+| `findFreeSlot(duration:before:)` | Finds the latest free gap today that fits the given duration |
+| `exportData()` | Encodes all sessions to JSON `Data` |
+| `importSessions(from:)` | Decodes and merges sessions (deduped by `id`) |
+| `replaceAll(with:)` | Replaces all sessions with the provided array |
 
 ### `TimeSession`
 
@@ -107,15 +123,34 @@ struct TimeSession: Codable, Identifiable {
 Two-tab layout (Timer / Stats) using a `.segmented` `Picker`.
 
 - **Timer tab** — large monospaced countdown display, Start/Stop button (`Space` shortcut), manual time entry form.
+  - *Duration mode* — enter hours + minutes; the session is placed in the latest free slot today.
+  - *Range mode* — pick From / To using `TimePickerField` (custom HH:MM input); a `DayTimelineView` shows existing sessions and the selected range (blue = valid, red = conflict).
 - **Stats tab** — delegates to `StatsView`.
 
 ### `StatsView`
 
-- Always shows "Today" total at the top.
-- `Picker` to switch between Week and Month views.
-- Navigation row: `‹ label ⌄ ›` — arrows step ±1 period; the label opens a `Menu` listing all periods that contain data.
-- Week and month offsets are independent — switching between them preserves the last viewed position.
-- Forward navigation is disabled when `offset >= 0` (can't navigate into the future).
+- **Week view** — bar chart with one row per day (Mon–Sun). Today's bar is full accent color; other days are dimmed.
+- **Month view** — bar chart with one row per calendar week within the month.
+- Navigation: `‹ This Week ›` / `‹ This Month ›` — arrows step ±1 period; forward navigation disabled at current period.
+- Footer shows **Total** and **Avg / day** (averaged over days/weeks with tracked time only).
+- **Export** — opens `NSSavePanel`; saves all sessions as a JSON file.
+- **Import** — opens `NSOpenPanel`; decodes the file, shows a confirmation alert with new/duplicate counts, and offers **Merge** (add new sessions only) or **Replace** (erase existing data).
+
+### `DayTimelineView`
+
+A 24-hour horizontal timeline rendered with `Canvas`. Shows:
+- Existing sessions as gray blocks.
+- Selected range as a blue (valid) or red (overlapping) highlight.
+- A "now" marker at the current time.
+- Hour labels every 3 hours (`00`, `03`, `06` … `21`, `00`) and grid lines.
+
+### `TimePickerField`
+
+`NSViewRepresentable` wrapping a custom `TimePickerNSView`:
+- Displays `HH:MM` with a highlighted segment (hours or minutes).
+- Keyboard: digit input, arrow keys to adjust, Tab / colon to switch segments, Esc to deactivate.
+- Mouse: click to activate / switch segment; stepper ▲▼ buttons to adjust.
+- Uses `NSEvent` local monitors instead of AppKit's first-responder chain to avoid conflicts with SwiftUI focus.
 
 ## Menu Bar Icon States
 
@@ -125,13 +160,14 @@ Two-tab layout (Timer / Stats) using a `.segmented` `Picker`.
 | Running | `systemGreen` |
 | Paused with time | `systemOrange` |
 
-The icon is rendered with `NSImage.SymbolConfiguration(paletteColors:)` to bake the color in before drawing.
-
 ## Key Implementation Notes
 
 - **SF Symbol coloring** in off-screen `NSImage`: use `NSImage.SymbolConfiguration(paletteColors:)` — **not** `contentTintColor`, `attributedTitle`, or `destinationIn` compositing.
 - **Menu bar label colors** are stripped by macOS — always use `NSStatusItem` with a custom-drawn `NSImage` for colored items.
 - **`onChange(of:)`** — use the single-argument form `{ newValue in }` for macOS 13 compatibility. The two-argument form `{ _, new in }` requires macOS 14+.
+- **Borderless panel + text fields** — a borderless `NSPanel` returns `canBecomeKey = false` by default; subclass and override to `true` so SwiftUI `TextField` can receive focus.
+- **`UNUserNotificationCenter`** requires a bundle identifier — guard with `Bundle.main.bundleIdentifier != nil` before calling `.current()` to avoid a crash when running via `swift run`.
+- **Modal panels (NSSavePanel / NSOpenPanel / NSAlert) and window levels** — the popup panel sits at `.popUpMenu` level. Set `panel.level = .normal` before running any modal so it can appear on top, then restore the level after.
 
 ## Install
 
@@ -156,7 +192,7 @@ Then open the app normally.
 
 ## Contributing
 
-Every new feature or bug fix must be developed on a dedicated branch and submitted as a merge (pull) request for review before merging into `main`. See [CONTRIBUTING](#contributing-workflow) below.
+Every new feature or bug fix must be developed on a dedicated branch and submitted as a merge (pull) request for review before merging into `main`.
 
 ### Contributing Workflow
 

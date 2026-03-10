@@ -2,12 +2,13 @@
 
 ## What this app is
 A native macOS menu bar time tracker. No Dock icon. No screenshots. No activity monitoring.
-Just a timer with start/stop, manual time entry, and daily/weekly/monthly statistics.
+Timer with start/stop, manual time entry (duration or time range), visual 24-hour timeline, statistics, export/import, and system notifications.
 
 ## Stack
 - Swift + SwiftUI, minimum macOS 13
 - Swift Package Manager (no Xcode project)
 - Run with: `swift run` | Build: `swift build -c release`
+- Frameworks: AppKit, SwiftUI, Combine, Foundation, UserNotifications
 
 ## Architecture
 
@@ -18,44 +19,62 @@ Do NOT use `@main` App struct — it conflicts with `main.swift`.
 ### AppDelegate
 Owns the `NSStatusItem` and the `NSPanel` popup.
 - Status bar button image is a custom-drawn `NSImage` (non-template) with pill border, colored icon and time text.
-- Popup is an `NSPanel` (`.borderless` + `.nonactivatingPanel`) with `NSVisualEffectView` (`.popover` material, corner radius 12) as content background.
-- Panel is positioned flush below the menu bar button using `button.window?.convertToScreen(...)` + `setFrameTopLeftPoint`.
-- Panel dismissal: global `NSEvent` monitor (clicks outside) + `NSApplication.didResignActiveNotification` (Cmd+Tab / app switch). Both are removed in `closePanel()`.
+- Popup is a `KeyablePanel: NSPanel` subclass (overrides `canBecomeKey` / `canBecomeMain` to `true`) with `.borderless` + `.nonactivatingPanel`. Background is `NSVisualEffectView` (`.popover` material, corner radius 12). The `canBecomeKey` override is required so SwiftUI `TextField` can receive focus in a borderless panel.
+- Panel positioned flush below menu bar button via `button.window?.convertToScreen(...)` + `setFrameTopLeftPoint`.
+- Panel dismissal: global `NSEvent` monitor (outside clicks) + `NSApplication.didResignActiveNotification` (Cmd+Tab / app switch). Both check `suppressAutoClose` flag before closing.
+- `suppressAutoClose: Bool` — set to `true` before running any NSSavePanel / NSOpenPanel / NSAlert modal to prevent the panel from closing underneath them.
+- `withPanelLowered(_:)` — temporarily sets panel level to `.normal` before a modal runs (so the modal appears above the panel), then restores it.
+- Sleep/screensaver: observes `NSWorkspace.willSleepNotification` and `com.apple.screensaver.didstart` (DistributedNotificationCenter). Calls `TimerManager.stop(reason:)`.
+- Notifications: sets itself as `UNUserNotificationCenterDelegate`, requests `.alert + .sound` on launch (guarded by `Bundle.main.bundleIdentifier != nil`). Delegate returns `.banner + .sound` so notifications appear while app is active.
 
 ### TimerManager (singleton)
 `TimerManager.shared` — `ObservableObject`.
-- `start()` / `stop()` / `reset()` / `addTime(hours:minutes:)`.
-- On `stop()`: records the delta since last save as a `TimeSession` in `SessionStore`.
-- On `addTime()`: records a manual `TimeSession` immediately.
-- `loadTodayTime()` — called once at launch to seed `elapsedSeconds` with today's already-tracked total.
+- `start()` / `stop(reason:)` / `reset()`.
+- `addTime(hours:minutes:)` — places session in latest free slot today (throws `ManualEntryError`).
+- `addTimeRange(start:end:)` — records explicit range, validates today/future/overlap (throws `ManualEntryError`).
+- `loadTodayTime()` — called once at launch to seed `elapsedSeconds`.
+- `notify(title:body:)` — sends `UNUserNotificationRequest` (guarded by bundle identifier check).
+- Sends notifications on `start()` and `stop(reason:)`.
 
 ### SessionStore (singleton)
 `SessionStore.shared` — `ObservableObject`.
 - Persists to `~/Library/Application Support/TimeTracker/sessions.json` (ISO-8601 dates).
 - Key queries: `sessions(on:)`, `sessions(weekOffset:)`, `sessions(monthOffset:)`, `totalSeconds(in:)`.
-
-### Menu bar icon colors
-- **Idle** (no time): `labelColor` (adapts to light/dark)
-- **Running**: `systemGreen`
-- **Paused with time**: `systemOrange`
-Icon is drawn with `NSImage.SymbolConfiguration(paletteColors:)` to bake color in.
-Text is drawn via `NSAttributedString` with explicit `.foregroundColor`.
-Everything (icon + time) is inside a pill drawn with `NSBezierPath(roundedRect:)`.
+- Overlap helpers: `hasOverlap(start:end:)`, `findFreeSlot(duration:before:)`.
+- Backup: `exportData() -> Data?`, `importSessions(from:)` (merge by id), `replaceAll(with:)`.
 
 ### ContentView tabs
 Timer tab | Stats tab — `Picker` with `.segmented` style.
+Timer tab manual entry has two modes (segmented picker):
+- **Duration** — hours + minutes text fields; session placed in latest free slot.
+- **Range** — `TimePickerField` for From/To; `DayTimelineView` shows conflict/free status.
+
+### DayTimelineView
+24-hour horizontal `Canvas` timeline. Shows existing sessions (gray), selected range (blue/red), "now" marker, hour labels every 3 hours.
+
+### TimePickerField
+`NSViewRepresentable` wrapping `TimePickerNSView`. Does NOT use AppKit first-responder chain — uses `NSEvent.addLocalMonitorForEvents` for keyboard and mouse instead. Has `isActive` flag for visual focus state. Stepper ▲▼ buttons adjust the selected segment.
 
 ### StatsView
-- Always shows "Today" total at top.
-- `Picker` for Week / Month.
-- `‹ label ⌄ ›` navigation row: arrows step ±1, label is a `Menu` dropdown listing all periods with data.
-- Week/month offsets are independent state (switching tabs preserves position).
-- Future navigation disabled (`offset >= 0`).
+- Week view: bar chart Mon–Sun, today highlighted.
+- Month view: bar chart per calendar week.
+- Footer: period total + daily average (days with data only).
+- Export: `NSSavePanel` → JSON file of all sessions.
+- Import: `NSOpenPanel` → decode with `.iso8601` date strategy → `NSAlert` showing new/duplicate counts with Merge / Replace / Cancel options.
 
-## Key patterns
-- SF Symbol coloring in off-screen `NSImage`: use `NSImage.SymbolConfiguration(paletteColors:)` — NOT `contentTintColor`, NOT `attributedTitle`, NOT `destinationIn` compositing.
-- `MenuBarExtra` label colors are stripped by macOS — always use `NSStatusItem` with custom-drawn `NSImage` for colored menu bar items.
-- `onChange(of:)` — use single-arg form `{ newValue in }` for macOS 13 compatibility. Two-arg form `{ _, new in }` requires macOS 14+.
+### Menu bar icon colors
+- **Idle** (no time): `labelColor`
+- **Running**: `systemGreen`
+- **Paused with time**: `systemOrange`
+
+## Key patterns & gotchas
+- SF Symbol coloring in off-screen `NSImage`: use `NSImage.SymbolConfiguration(paletteColors:)` — NOT `contentTintColor`, NOT `attributedTitle`, NOT `destinationIn`.
+- `MenuBarExtra` label colors are stripped — always use `NSStatusItem` with custom `NSImage`.
+- `onChange(of:)` — single-arg form `{ newValue in }` for macOS 13. Two-arg `{ _, new in }` requires macOS 14+.
+- Borderless `NSPanel` returns `canBecomeKey = false` — subclass and override to allow SwiftUI text field focus.
+- `UNUserNotificationCenter.current()` crashes without a bundle identifier — always guard with `Bundle.main.bundleIdentifier != nil` before calling.
+- Modal dialogs (NSSavePanel, NSOpenPanel, NSAlert) appear behind a `.popUpMenu` level panel — use `withPanelLowered(_:)` and `suppressAutoClose` around every modal call.
+- Import JSON must use `JSONDecoder` with `.iso8601` date strategy to match the encoder.
 
 ## Git workflow
 - Every new feature or bug fix MUST be developed on a dedicated branch created from `main`.

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct StatsView: View {
     enum Period { case week, month }
@@ -8,196 +9,236 @@ struct StatsView: View {
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
 
-    private var offset: Int { period == .week ? weekOffset : monthOffset }
-
-    private var currentSessions: [TimeSession] {
-        period == .week
-            ? store.sessions(weekOffset: weekOffset)
-            : store.sessions(monthOffset: monthOffset)
-    }
-
-    private var totalForPeriod: Int { store.totalSeconds(in: currentSessions) }
-    private var totalToday:     Int { store.totalSeconds(in: store.sessions(on: .now)) }
-
     var body: some View {
         VStack(spacing: 0) {
-            todayRow
+            headerSection
             Divider()
-            periodPicker
-            navigationRow
+            chartSection
             Divider()
-            totalRow
+            footerSection
             Divider()
-            sessionList
+            backupSection
         }
     }
 
-    // MARK: - Today
+    // MARK: - Header
 
-    private var todayRow: some View {
-        HStack {
-            Text("Today")
-                .font(.subheadline)
+    private var headerSection: some View {
+        VStack(spacing: 6) {
+            Picker("", selection: $period) {
+                Text("Week").tag(Period.week)
+                Text("Month").tag(Period.month)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: period) { _ in weekOffset = 0; monthOffset = 0 }
+
+            HStack {
+                Button { step(-1) } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-            Spacer()
-            Text(totalToday > 0 ? formatDuration(totalToday) : "—")
-                .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                .foregroundStyle(totalToday > 0 ? .primary : .tertiary)
+
+                Spacer()
+                Text(periodLabel)
+                    .font(.subheadline).fontWeight(.medium)
+                Spacer()
+
+                Button { step(+1) } label: {
+                    Image(systemName: "chevron.right")
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(currentOffset < 0 ? .secondary : .tertiary)
+                .disabled(currentOffset >= 0)
+            }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
     }
 
-    // MARK: - Period picker
+    // MARK: - Chart
 
-    private var periodPicker: some View {
-        Picker("", selection: $period) {
-            Text("Week").tag(Period.week)
-            Text("Month").tag(Period.month)
+    private var chartSection: some View {
+        VStack(spacing: 0) {
+            if period == .week {
+                ForEach(weekRows) { row in
+                    barRow(
+                        label: row.label,
+                        seconds: row.seconds,
+                        maxSeconds: maxWeekSeconds,
+                        highlight: row.isToday,
+                        labelWidth: 30
+                    )
+                }
+            } else {
+                ForEach(monthWeekRows) { row in
+                    barRow(
+                        label: row.label,
+                        seconds: row.seconds,
+                        maxSeconds: maxMonthSeconds,
+                        highlight: false,
+                        labelWidth: 52
+                    )
+                }
+            }
         }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
     }
 
-    // MARK: - Navigation
+    private func barRow(label: String, seconds: Int, maxSeconds: Int,
+                        highlight: Bool, labelWidth: CGFloat) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 11, weight: highlight ? .semibold : .regular))
+                .foregroundStyle(highlight ? .primary : .secondary)
+                .frame(width: labelWidth, alignment: .leading)
 
-    private var navigationRow: some View {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(.secondary.opacity(0.1))
+                    if seconds > 0, maxSeconds > 0 {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(highlight ? Color.accentColor : Color.accentColor.opacity(0.55))
+                            .frame(width: geo.size.width * CGFloat(seconds) / CGFloat(maxSeconds))
+                    }
+                }
+            }
+            .frame(height: 12)
+
+            Text(seconds > 0 ? formatDuration(seconds) : "—")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(seconds > 0 ? .primary : .tertiary)
+                .frame(width: 48, alignment: .trailing)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
+    }
+
+    // MARK: - Footer
+
+    private var footerSection: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("TOTAL").font(.system(size: 9, weight: .medium)).foregroundStyle(.tertiary)
+                Text(periodTotal > 0 ? formatDuration(periodTotal) : "—")
+                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+            }
+            Spacer()
+            if dailyAverage > 0 {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("AVG / DAY").font(.system(size: 9, weight: .medium)).foregroundStyle(.tertiary)
+                    Text(formatDuration(dailyAverage))
+                        .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: - Backup
+
+    private var backupSection: some View {
         HStack {
-            Button { step(-1) } label: {
-                Image(systemName: "chevron.left")
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+            Button { exportBackup() } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+                    .font(.caption)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
 
             Spacer()
 
-            Menu {
-                if period == .week {
-                    ForEach(availableWeekOffsets, id: \.self) { off in
-                        Button {
-                            weekOffset = off
-                        } label: {
-                            if off == weekOffset {
-                                Label(weekLabel(off), systemImage: "checkmark")
-                            } else {
-                                Text(weekLabel(off))
-                            }
-                        }
-                    }
-                } else {
-                    ForEach(availableMonthOffsets, id: \.self) { off in
-                        Button {
-                            monthOffset = off
-                        } label: {
-                            if off == monthOffset {
-                                Label(monthLabel(off), systemImage: "checkmark")
-                            } else {
-                                Text(monthLabel(off))
-                            }
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 3) {
-                    Text(periodLabel)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    Image(systemName: "chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+            Button { importBackup() } label: {
+                Label("Import", systemImage: "square.and.arrow.down")
+                    .font(.caption)
             }
             .buttonStyle(.plain)
-
-            Spacer()
-
-            Button { step(+1) } label: {
-                Image(systemName: "chevron.right")
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(offset < 0 ? .secondary : .tertiary)
-            .disabled(offset >= 0)
+            .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-    }
-
-    // MARK: - Available periods (only those with data + current)
-
-    private var availableWeekOffsets: [Int] {
-        let cal = Calendar.current
-        guard let currentStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start else { return [0] }
-        var offsets: Set<Int> = [0]
-        for session in store.sessions {
-            guard let sessionStart = cal.dateInterval(of: .weekOfYear, for: session.startDate)?.start else { continue }
-            let diff = cal.dateComponents([.weekOfYear], from: sessionStart, to: currentStart).weekOfYear ?? 0
-            offsets.insert(-diff)
-        }
-        return offsets.sorted(by: >)
-    }
-
-    private var availableMonthOffsets: [Int] {
-        let cal = Calendar.current
-        guard let currentStart = cal.dateInterval(of: .month, for: .now)?.start else { return [0] }
-        var offsets: Set<Int> = [0]
-        for session in store.sessions {
-            guard let sessionStart = cal.dateInterval(of: .month, for: session.startDate)?.start else { continue }
-            let diff = cal.dateComponents([.month], from: sessionStart, to: currentStart).month ?? 0
-            offsets.insert(-diff)
-        }
-        return offsets.sorted(by: >)
-    }
-
-    // MARK: - Total
-
-    private var totalRow: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Total")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(totalForPeriod > 0 ? formatDuration(totalForPeriod) : "—")
-                .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                .foregroundStyle(totalForPeriod > 0 ? .primary : .tertiary)
-        }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
     }
 
-    // MARK: - Session list
+    // MARK: - Data models
 
-    private var sessionList: some View {
-        Group {
-            if currentSessions.isEmpty {
-                Text("No sessions")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(currentSessions.reversed()) { session in
-                            SessionRow(session: session)
-                            Divider().padding(.leading, 16)
-                        }
-                    }
-                }
-                .frame(maxHeight: 180)
-            }
+    private struct DayRow: Identifiable {
+        let id: Date; let label: String; let seconds: Int; let isToday: Bool
+    }
+
+    private struct WeekRow: Identifiable {
+        let id: Date; let label: String; let seconds: Int
+    }
+
+    private var weekRows: [DayRow] {
+        let cal = Calendar.current
+        guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
+              let start = cal.date(byAdding: .weekOfYear, value: weekOffset, to: weekStart)
+        else { return [] }
+        return (0..<7).compactMap { i in
+            guard let day = cal.date(byAdding: .day, value: i, to: start) else { return nil }
+            let secs = store.totalSeconds(in: store.sessions(on: day))
+            let raw = day.formatted(.dateTime.weekday(.abbreviated))
+            return DayRow(id: day, label: String(raw.prefix(3)), seconds: secs,
+                          isToday: cal.isDateInToday(day))
         }
     }
 
-    // MARK: - Helpers
+    private var monthWeekRows: [WeekRow] {
+        let cal = Calendar.current
+        guard let monthStart = cal.dateInterval(of: .month, for: .now)?.start,
+              let start = cal.date(byAdding: .month, value: monthOffset, to: monthStart),
+              let monthEnd = cal.date(byAdding: .month, value: 1, to: start)
+        else { return [] }
+        var rows: [WeekRow] = []
+        var cursor = start
+        var weekNum = 1
+        while cursor < monthEnd {
+            let next = cal.date(byAdding: .day, value: 7, to: cursor) ?? monthEnd
+            let end = min(next, monthEnd)
+            var dayCursor = cursor
+            var secs = 0
+            while dayCursor < end {
+                secs += store.totalSeconds(in: store.sessions(on: dayCursor))
+                dayCursor = cal.date(byAdding: .day, value: 1, to: dayCursor) ?? dayCursor.addingTimeInterval(86400)
+            }
+            let sd = cal.component(.day, from: cursor)
+            let ed = cal.component(.day, from: end.addingTimeInterval(-1))
+            rows.append(WeekRow(id: cursor, label: "Wk\(weekNum) \(sd)–\(ed)", seconds: secs))
+            cursor = end
+            weekNum += 1
+        }
+        return rows
+    }
+
+    private var maxWeekSeconds:  Int { weekRows.map(\.seconds).max() ?? 0 }
+    private var maxMonthSeconds: Int { monthWeekRows.map(\.seconds).max() ?? 0 }
+
+    private var periodTotal: Int {
+        period == .week
+            ? weekRows.reduce(0) { $0 + $1.seconds }
+            : monthWeekRows.reduce(0) { $0 + $1.seconds }
+    }
+
+    private var dailyAverage: Int {
+        let active = period == .week
+            ? weekRows.filter { $0.seconds > 0 }.count
+            : monthWeekRows.filter { $0.seconds > 0 }.count
+        return active > 0 ? periodTotal / active : 0
+    }
+
+    private var currentOffset: Int { period == .week ? weekOffset : monthOffset }
+
+    // MARK: - Navigation
 
     private func step(_ delta: Int) {
-        if period == .week  { weekOffset  = min(0, weekOffset  + delta) }
-        else                { monthOffset = min(0, monthOffset + delta) }
+        if period == .week { weekOffset  = min(0, weekOffset  + delta) }
+        else               { monthOffset = min(0, monthOffset + delta) }
     }
 
     private var periodLabel: String {
@@ -205,24 +246,20 @@ struct StatsView: View {
     }
 
     private func weekLabel(_ offset: Int) -> String {
-        if offset == 0 { return "This Week" }
+        if offset == 0  { return "This Week" }
         if offset == -1 { return "Last Week" }
         let cal = Calendar.current
         guard let base  = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
               let start = cal.date(byAdding: .weekOfYear, value: offset, to: base),
               let end   = cal.date(byAdding: .day, value: 6, to: start) else { return "" }
-        let sm = cal.component(.month, from: start)
-        let em = cal.component(.month, from: end)
-        let sd = cal.component(.day, from: start)
-        let ed = cal.component(.day, from: end)
-        if sm == em {
-            return "\(start.formatted(.dateTime.month(.abbreviated))) \(sd) – \(ed)"
-        }
+        let sm = cal.component(.month, from: start), em = cal.component(.month, from: end)
+        let sd = cal.component(.day,   from: start), ed = cal.component(.day,   from: end)
+        if sm == em { return "\(start.formatted(.dateTime.month(.abbreviated))) \(sd)–\(ed)" }
         return "\(start.formatted(.dateTime.month(.abbreviated).day())) – \(end.formatted(.dateTime.month(.abbreviated).day()))"
     }
 
     private func monthLabel(_ offset: Int) -> String {
-        if offset == 0 { return "This Month" }
+        if offset == 0  { return "This Month" }
         if offset == -1 { return "Last Month" }
         let cal = Calendar.current
         guard let base = cal.dateInterval(of: .month, for: .now)?.start,
@@ -231,55 +268,84 @@ struct StatsView: View {
     }
 
     private func formatDuration(_ seconds: Int) -> String {
-        let h = seconds / 3600
-        let m = (seconds % 3600) / 60
+        let h = seconds / 3600, m = (seconds % 3600) / 60
         if h > 0 { return "\(h)h \(m)m" }
         if m > 0 { return "\(m)m" }
         return "<1m"
     }
-}
 
-// MARK: - Session row
+    // MARK: - Export / Import
 
-struct SessionRow: View {
-    let session: TimeSession
+    private var appDelegate: AppDelegate? { NSApp.delegate as? AppDelegate }
 
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(dateString)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if session.isManual {
-                    Text("Manual entry")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            Spacer()
-            Text(durationString)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+    private func exportBackup() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        let dateStr = Date().formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
+        panel.nameFieldStringValue = "timetracker-\(dateStr).json"
+        appDelegate?.suppressAutoClose = true
+        defer { appDelegate?.suppressAutoClose = false }
+        let result = appDelegate?.withPanelLowered { panel.runModal() } ?? panel.runModal()
+        guard result == .OK, let url = panel.url,
+              let data = SessionStore.shared.exportData() else { return }
+        try? data.write(to: url, options: .atomic)
     }
 
-    private var dateString: String {
-        let cal = Calendar.current
-        if cal.isDateInToday(session.startDate) {
-            return "Today · " + session.startDate.formatted(date: .omitted, time: .shortened)
-        } else if cal.isDateInYesterday(session.startDate) {
-            return "Yesterday · " + session.startDate.formatted(date: .omitted, time: .shortened)
+    private func importBackup() {
+        let openPanel = NSOpenPanel()
+        openPanel.allowedContentTypes = [.json]
+        openPanel.allowsMultipleSelection = false
+        openPanel.message = "Select a TimeTracker backup file"
+        appDelegate?.suppressAutoClose = true
+        defer { appDelegate?.suppressAutoClose = false }
+        let openResult = appDelegate?.withPanelLowered { openPanel.runModal() } ?? openPanel.runModal()
+        guard openResult == .OK, let url = openPanel.urls.first,
+              let data = try? Data(contentsOf: url)
+        else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let imported = try? decoder.decode([TimeSession].self, from: data) else {
+            let err = NSAlert()
+            err.messageText = "Invalid backup file"
+            err.informativeText = "The selected file is not a valid TimeTracker backup."
+            err.alertStyle = .warning
+            appDelegate?.withPanelLowered { err.runModal() }
+            return
         }
-        return session.startDate.formatted(date: .abbreviated, time: .shortened)
-    }
 
-    private var durationString: String {
-        let h = session.duration / 3600
-        let m = (session.duration % 3600) / 60
-        let s = session.duration % 60
-        if h > 0 { return String(format: "%dh %02dm", h, m) }
-        if m > 0 { return String(format: "%dm %02ds", m, s) }
-        return String(format: "%ds", s)
+        let existing = SessionStore.shared.sessions
+        let existingIDs = Set(existing.map { $0.id })
+        let newCount = imported.filter { !existingIDs.contains($0.id) }.count
+        let skipCount = imported.count - newCount
+
+        let alert = NSAlert()
+        alert.messageText = "Import \(imported.count) session\(imported.count == 1 ? "" : "s")?"
+        var info = newCount > 0
+            ? "\(newCount) new session\(newCount == 1 ? "" : "s") will be added."
+            : "No new sessions to add."
+        if skipCount > 0 {
+            info += "\n\(skipCount) duplicate\(skipCount == 1 ? "" : "s") will be skipped."
+        }
+        info += "\n\nChoose Replace to erase all existing data and import only the backup file."
+        alert.informativeText = info
+        alert.addButton(withTitle: "Merge")
+        alert.addButton(withTitle: "Replace")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .informational
+
+        let response = appDelegate?.withPanelLowered { alert.runModal() } ?? alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn: // Merge
+            // Save any running segment so it's included in today's total after reload
+            if TimerManager.shared.isRunning { TimerManager.shared.stop() }
+            try? SessionStore.shared.importSessions(from: data)
+            TimerManager.shared.reloadFromStore()
+        case .alertSecondButtonReturn: // Replace
+            // Discard in-progress segment — we're replacing everything
+            SessionStore.shared.replaceAll(with: imported)
+            TimerManager.shared.reloadFromStore()
+        default:
+            break
+        }
     }
 }
