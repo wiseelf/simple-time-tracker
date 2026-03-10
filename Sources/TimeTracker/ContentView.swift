@@ -1,15 +1,30 @@
 import SwiftUI
 
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject var manager: TimerManager
+    @ObservedObject private var store = SessionStore.shared
+
+    var onResize: ((CGFloat) -> Void)?
 
     @State private var addHours: String = ""
     @State private var addMinutes: String = ""
     @State private var activeTab: Tab = .timer
+    @State private var entryMode: EntryMode = .duration
+    @State private var rangeStart: Date = Date().addingTimeInterval(-3600)
+    @State private var rangeEnd: Date = Date()
+    @State private var entryError: String?
     @FocusState private var focusedField: Field?
 
     enum Field { case hours, minutes }
     enum Tab { case timer, stats }
+    enum EntryMode { case duration, range }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,6 +43,12 @@ struct ContentView: View {
             footerSection
         }
         .frame(width: 260)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
+        })
+        .onPreferenceChange(ContentHeightKey.self) { height in
+            DispatchQueue.main.async { onResize?(height) }
+        }
     }
 
     private var tabPicker: some View {
@@ -106,37 +127,96 @@ struct ContentView: View {
 
     private var manualEntrySection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Add time manually")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 6) {
-                Group {
-                    TextField("0", text: $addHours)
-                        .focused($focusedField, equals: .hours)
-                        .onChange(of: addHours) { v in addHours = sanitize(v, max: 99) }
-                    Text("h")
-                        .foregroundStyle(.secondary)
-                    TextField("0", text: $addMinutes)
-                        .focused($focusedField, equals: .minutes)
-                        .onChange(of: addMinutes) { v in addMinutes = sanitize(v, max: 59) }
-                    Text("m")
-                        .foregroundStyle(.secondary)
-                }
-                .font(.system(.body, design: .monospaced))
-
+            HStack {
+                Text("Add time manually")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
-
-                Button("Add") {
-                    commitManualEntry()
+                Picker("", selection: $entryMode) {
+                    Text("Duration").tag(EntryMode.duration)
+                    Text("Range").tag(EntryMode.range)
                 }
-                .buttonStyle(.bordered)
-                .disabled(addHours.isEmpty && addMinutes.isEmpty)
-                .keyboardShortcut(.return, modifiers: [])
+                .pickerStyle(.segmented)
+                .frame(width: 128)
+                .onChange(of: entryMode) { _ in entryError = nil }
+            }
+
+            if entryMode == .duration {
+                durationEntryRow
+            } else {
+                rangeEntryRows
+            }
+
+            if let error = entryError {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+
+    private var durationEntryRow: some View {
+        HStack(spacing: 6) {
+            Group {
+                TextField("0", text: $addHours)
+                    .focused($focusedField, equals: .hours)
+                    .onChange(of: addHours) { v in addHours = sanitize(v, max: 99) }
+                Text("h")
+                    .foregroundStyle(.secondary)
+                TextField("0", text: $addMinutes)
+                    .focused($focusedField, equals: .minutes)
+                    .onChange(of: addMinutes) { v in addMinutes = sanitize(v, max: 59) }
+                Text("m")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.system(.body, design: .monospaced))
+
+            Spacer()
+
+            Button("Add") { commitDurationEntry() }
+                .buttonStyle(.bordered)
+                .disabled(addHours.isEmpty && addMinutes.isEmpty)
+                .keyboardShortcut(.return, modifiers: [])
+        }
+    }
+
+    private var rangeEntryRows: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("From")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, alignment: .leading)
+                DatePicker("", selection: $rangeStart, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+            }
+            HStack {
+                Text("To")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, alignment: .leading)
+                DatePicker("", selection: $rangeEnd, displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+            }
+
+            DayTimelineView(
+                sessions: store.sessions(on: .now),
+                rangeStart: rangeStart,
+                rangeEnd: rangeEnd
+            )
+            .padding(.top, 2)
+
+            HStack {
+                Spacer()
+                Button("Add") { commitRangeEntry() }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.return, modifiers: [])
+            }
+        }
     }
 
     private var footerSection: some View {
@@ -155,13 +235,27 @@ struct ContentView: View {
 
     // MARK: - Helpers
 
-    private func commitManualEntry() {
+    private func commitDurationEntry() {
+        entryError = nil
         let h = Int(addHours) ?? 0
         let m = Int(addMinutes) ?? 0
-        manager.addTime(hours: h, minutes: m)
-        addHours = ""
-        addMinutes = ""
-        focusedField = nil
+        do {
+            try manager.addTime(hours: h, minutes: m)
+            addHours = ""
+            addMinutes = ""
+            focusedField = nil
+        } catch {
+            entryError = error.localizedDescription
+        }
+    }
+
+    private func commitRangeEntry() {
+        entryError = nil
+        do {
+            try manager.addTimeRange(start: rangeStart, end: rangeEnd)
+        } catch {
+            entryError = error.localizedDescription
+        }
     }
 
     private func sanitize(_ value: String, max maxVal: Int) -> String {
