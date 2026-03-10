@@ -2,9 +2,14 @@ import AppKit
 import SwiftUI
 import Combine
 
+private final class KeyablePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var panel: NSPanel?
+    private var panel: KeyablePanel?
     private var panelAnchorTop: CGFloat = 0
     private var eventMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
@@ -117,7 +122,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let idealSize = hc.sizeThatFits(in: NSSize(width: panelWidth, height: 10_000))
         let panelHeight = max(200, idealSize.height)
 
-        let newPanel = NSPanel(
+        let newPanel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
