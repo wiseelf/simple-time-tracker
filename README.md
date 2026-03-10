@@ -10,6 +10,7 @@ A lightweight native macOS menu bar app for tracking time. No Dock icon, no back
 - **Manual entry (range)** — add time by picking a From / To time with a custom HH:MM picker and a 24-hour visual timeline
 - **Auto-stop on sleep / screensaver** — timer stops automatically when the Mac sleeps or the screensaver activates; a system notification is sent
 - **Persistent sessions** — time is saved automatically; today's total is restored on relaunch
+- **Automatic day reset** — at midnight the timer resets to `00:00:00`; if it was running, the previous day's session is saved and the timer restarts fresh for the new day
 - **Statistics** — bar chart of tracked time per day (week view) or per week (month view), with period total and daily average
 - **Export / Import** — back up all sessions to a JSON file and restore (merge or replace) on any machine
 - **System notifications** — notified when the timer starts, stops, or is auto-stopped
@@ -86,7 +87,7 @@ Owns the `NSStatusItem` and the floating `NSPanel` popup.
 | `reset()` | Stops and zeroes all counters |
 | `addTime(hours:minutes:)` | Finds the latest free slot today and records a manual `TimeSession` (throws `ManualEntryError`) |
 | `addTimeRange(start:end:)` | Records a manual `TimeSession` for an explicit time range; validates today-only, start < end, not in future, no overlap (throws `ManualEntryError`) |
-| `loadTodayTime()` | Called once at launch to seed `elapsedSeconds` with today's saved total |
+| `loadTodayTime()` | Called once at launch to seed `elapsedSeconds` with today's saved total and register the midnight day-change observer |
 
 ### `SessionStore` (singleton)
 

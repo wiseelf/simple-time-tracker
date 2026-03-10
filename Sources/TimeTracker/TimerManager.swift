@@ -62,11 +62,32 @@ class TimerManager: ObservableObject {
 
     /// Called once on launch to seed the timer with today's already-tracked time.
     func loadTodayTime() {
+        observeDayChange()
         let total = SessionStore.shared.totalSeconds(in: SessionStore.shared.sessions(on: .now))
         guard total > 0 else { return }
         elapsedSeconds = total
         accumulatedSeconds = total
         savedSeconds = total
+    }
+
+    private func observeDayChange() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDayChange),
+            name: .NSCalendarDayChanged,
+            object: nil
+        )
+    }
+
+    @objc private func handleDayChange() {
+        let wasRunning = isRunning
+        stop(reason: "New day")
+        elapsedSeconds = 0
+        accumulatedSeconds = 0
+        savedSeconds = 0
+        if wasRunning {
+            start()
+        }
     }
 
     func start() {
