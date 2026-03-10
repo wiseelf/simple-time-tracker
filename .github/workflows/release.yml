@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: macos-15          # Xcode 16, Swift 6, macOS 15 runner
+
+    permissions:
+      contents: write          # needed to create releases and push tags
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # full history so we can read all tags
+
+      # ── Determine next version ────────────────────────────────────────────
+      - name: Bump version
+        id: version
+        run: |
+          # Find the latest vX.Y.Z tag; default to v0.0.0 if none exists
+          latest=$(git tag --list 'v*.*.*' --sort=-version:refname | head -1)
+          latest=${latest:-v0.0.0}
+
+          major=$(echo "$latest" | cut -d. -f1 | tr -d 'v')
+          minor=$(echo "$latest" | cut -d. -f2)
+          patch=$(echo "$latest" | cut -d. -f3)
+
+          new_patch=$((patch + 1))
+          new_tag="v${major}.${minor}.${new_patch}"
+
+          echo "tag=$new_tag" >> "$GITHUB_OUTPUT"
+          echo "version=${major}.${minor}.${new_patch}" >> "$GITHUB_OUTPUT"
+          echo "Next release: $new_tag"
+
+      # ── Cache SPM dependencies ────────────────────────────────────────────
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      # ── Build ─────────────────────────────────────────────────────────────
+      - name: Build release binary
+        run: swift build -c release
+
+      # ── Assemble .app bundle ──────────────────────────────────────────────
+      - name: Assemble .app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          APP_NAME="TimeTracker"
+          BUNDLE_ID="com.wiseelf.timetracker"
+          APP_DIR="dist/${APP_NAME}.app"
+          CONTENTS="${APP_DIR}/Contents"
+          MACOS_DIR="${CONTENTS}/MacOS"
+          RES_DIR="${CONTENTS}/Resources"
+
+          rm -rf dist
+          mkdir -p "$MACOS_DIR" "$RES_DIR"
+          cp ".build/release/${APP_NAME}" "$MACOS_DIR/${APP_NAME}"
+
+          /usr/libexec/PlistBuddy -c "Add :CFBundleName             string '${APP_NAME}'"           "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable       string '${APP_NAME}'"           "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier       string '${BUNDLE_ID}'"          "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType      string 'APPL'"                  "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string '${VERSION}'"          "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleVersion          string '${VERSION}'"            "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion   string '13.0'"                  "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :LSUIElement              bool   true"                    "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable  bool   true"                    "${CONTENTS}/Info.plist"
+
+          # Ad-hoc sign (no certificate required)
+          codesign --force --deep --sign - "$APP_DIR"
+
+      # ── Package DMG ───────────────────────────────────────────────────────
+      - name: Create DMG
+        run: |
+          hdiutil create -volname "TimeTracker" \
+            -srcfolder dist/TimeTracker.app \
+            -ov -format UDZO \
+            dist/TimeTracker.dmg
+
+      # ── Tag & Release ─────────────────────────────────────────────────────
+      - name: Tag commit
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.version.outputs.tag }}
+          git push origin ${{ steps.version.outputs.tag }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: TimeTracker ${{ steps.version.outputs.tag }}
+          body: |
+            ## Install
+
+            1. Download **TimeTracker.dmg** below.
+            2. Open the DMG and drag `TimeTracker.app` to your Applications folder.
+            3. On first launch: **right-click → Open → Open** to bypass Gatekeeper (ad-hoc signed build).
+
+            > For a fully trusted build without the Gatekeeper prompt, sign with a Developer ID certificate.
+          files: dist/TimeTracker.dmg
+          draft: false
+          prerelease: false
