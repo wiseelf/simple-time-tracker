@@ -1,6 +1,24 @@
 import Foundation
 import Combine
 
+enum ManualEntryError: LocalizedError {
+    case noFreeSlot
+    case overlap
+    case invalidRange
+    case futureTime
+    case notToday
+
+    var errorDescription: String? {
+        switch self {
+        case .noFreeSlot:    return "No free slot available today for this duration."
+        case .overlap:       return "This range overlaps with an existing session."
+        case .invalidRange:  return "Start time must be before end time."
+        case .futureTime:    return "Cannot log time in the future."
+        case .notToday:      return "Time range must be within today."
+        }
+    }
+}
+
 class TimerManager: ObservableObject {
     static let shared = TimerManager()
 
@@ -72,13 +90,32 @@ class TimerManager: ObservableObject {
         segmentStartDate = nil
     }
 
-    func addTime(hours: Int, minutes: Int) {
+    /// Finds the latest free slot today and places a session of the given duration there.
+    func addTime(hours: Int, minutes: Int) throws {
         let seconds = hours * 3600 + minutes * 60
         guard seconds > 0 else { return }
+        guard let slotStart = SessionStore.shared.findFreeSlot(duration: seconds, before: Date()) else {
+            throw ManualEntryError.noFreeSlot
+        }
         elapsedSeconds += seconds
         accumulatedSeconds += seconds
         savedSeconds += seconds
-        SessionStore.shared.record(TimeSession(startDate: Date(), duration: seconds, isManual: true))
+        SessionStore.shared.record(TimeSession(startDate: slotStart, duration: seconds, isManual: true))
+    }
+
+    /// Records an explicit time range; validates no overlap and that the range is today and not in the future.
+    func addTimeRange(start: Date, end: Date) throws {
+        let cal = Calendar.current
+        guard cal.isDateInToday(start) && cal.isDateInToday(end) else { throw ManualEntryError.notToday }
+        guard start < end else { throw ManualEntryError.invalidRange }
+        guard end <= Date() else { throw ManualEntryError.futureTime }
+        guard !SessionStore.shared.hasOverlap(start: start, end: end) else { throw ManualEntryError.overlap }
+
+        let duration = Int(end.timeIntervalSince(start))
+        elapsedSeconds += duration
+        accumulatedSeconds += duration
+        savedSeconds += duration
+        SessionStore.shared.record(TimeSession(startDate: start, duration: duration, isManual: true))
     }
 
     private func formatted(_ totalSeconds: Int) -> String {

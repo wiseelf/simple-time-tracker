@@ -5,6 +5,7 @@ import Combine
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var panel: NSPanel?
+    private var panelAnchorTop: CGFloat = 0
     private var eventMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
 
@@ -108,9 +109,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let panelWidth: CGFloat = 260
 
         let hc = NSHostingController(
-            rootView: ContentView().environmentObject(TimerManager.shared)
+            rootView: ContentView(onResize: { [weak self] height in
+                self?.resizePanel(to: height)
+            }).environmentObject(TimerManager.shared)
         )
-        // Measure natural height at the given width
+
         let idealSize = hc.sizeThatFits(in: NSSize(width: panelWidth, height: 10_000))
         let panelHeight = max(200, idealSize.height)
 
@@ -143,8 +146,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Position: flush below the menu bar button, horizontally centered on it
         let btnInWindow = button.convert(button.bounds, to: nil)
         let btnOnScreen = buttonWindow.convertToScreen(btnInWindow)
-        let x = (btnOnScreen.midX - panelWidth / 2).rounded()
-        newPanel.setFrameTopLeftPoint(NSPoint(x: x, y: btnOnScreen.minY - 6))
+        let anchorX = (btnOnScreen.midX - panelWidth / 2).rounded()
+        let anchorTop = btnOnScreen.minY - 6
+        panelAnchorTop = anchorTop
+        newPanel.setFrameTopLeftPoint(NSPoint(x: anchorX, y: anchorTop))
 
         newPanel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -161,6 +166,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             selector: #selector(appResignedActive),
             name: NSApplication.didResignActiveNotification,
             object: nil
+        )
+    }
+
+    private func resizePanel(to height: CGFloat) {
+        guard let panel else { return }
+        let newHeight = max(200, height)
+        let frame = panel.frame
+        guard abs(frame.height - newHeight) > 2 else { return }
+        panel.setFrame(
+            NSRect(x: frame.minX, y: panelAnchorTop - newHeight, width: frame.width, height: newHeight),
+            display: true, animate: false
         )
     }
 

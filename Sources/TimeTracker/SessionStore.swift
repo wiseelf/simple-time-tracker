@@ -66,6 +66,42 @@ class SessionStore: ObservableObject {
         return sessions.filter { $0.startDate >= start && $0.startDate < end }
     }
 
+    // MARK: - Overlap & slot helpers
+
+    /// Returns true if [start, end) overlaps any existing session on the same day.
+    func hasOverlap(start: Date, end: Date) -> Bool {
+        sessions(on: start).contains { session in
+            let sessionEnd = session.startDate.addingTimeInterval(TimeInterval(session.duration))
+            return start < sessionEnd && session.startDate < end
+        }
+    }
+
+    /// Finds the latest free slot today (before `before`) that fits `duration` seconds.
+    /// Returns the slot's start date, or nil if no gap is large enough.
+    func findFreeSlot(duration: Int, before: Date) -> Date? {
+        let needed = TimeInterval(duration)
+        let dayStart = Calendar.current.startOfDay(for: before)
+        let sorted = sessions(on: before).sorted { $0.startDate < $1.startDate }
+
+        var cursor = dayStart
+        var latestFit: Date?
+
+        for session in sorted {
+            let gapEnd = session.startDate
+            if gapEnd.timeIntervalSince(cursor) >= needed {
+                latestFit = gapEnd.addingTimeInterval(-needed)
+            }
+            let sessionEnd = session.startDate.addingTimeInterval(TimeInterval(session.duration))
+            cursor = max(cursor, sessionEnd)
+        }
+
+        if before.timeIntervalSince(cursor) >= needed {
+            latestFit = before.addingTimeInterval(-needed)
+        }
+
+        return latestFit
+    }
+
     // MARK: - Persistence
 
     private func persist() {
