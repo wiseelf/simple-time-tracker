@@ -29,12 +29,13 @@ struct DayTimelineView: View {
                     with: .color(.secondary.opacity(0.12))
                 )
 
-                // Hour grid lines at 6, 12, 18
-                for hour in [6, 12, 18] {
+                // Grid lines every 3 hours
+                for hour in stride(from: 3, to: 24, by: 3) {
                     let x = Double(hour) / 24.0 * Double(w)
+                    let opacity = hour % 6 == 0 ? 0.2 : 0.1
                     ctx.fill(
                         Path(.init(x: x, y: 0, width: 1, height: trackH)),
-                        with: .color(.secondary.opacity(0.15))
+                        with: .color(.secondary.opacity(opacity))
                     )
                 }
 
@@ -71,16 +72,23 @@ struct DayTimelineView: View {
             }
             .frame(height: trackH)
 
-            // Hour labels aligned to their positions on the track
-            HStack(spacing: 0) {
-                Text("12a").frame(maxWidth: .infinity, alignment: .leading)
-                Text("6a").frame(maxWidth: .infinity, alignment: .center)
-                Text("12p").frame(maxWidth: .infinity, alignment: .center)
-                Text("6p").frame(maxWidth: .infinity, alignment: .center)
-                Text("12a").frame(maxWidth: .infinity, alignment: .trailing)
+            // Hour labels every 3 hours, pinned to exact track positions
+            GeometryReader { geo in
+                let w = geo.size.width
+                ZStack(alignment: .topLeading) {
+                    ForEach(Array(stride(from: 0, through: 24, by: 3)), id: \.self) { hour in
+                        let x = CGFloat(hour) / 24.0 * w
+                        Text(String(format: "%02d", hour == 24 ? 0 : hour))
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .fixedSize()
+                            .offset(x: hour == 0  ? 0 :
+                                       hour == 24 ? w - 14 :
+                                       x - 7)
+                    }
+                }
             }
-            .font(.system(size: 8))
-            .foregroundStyle(.tertiary)
+            .frame(height: 10)
         }
     }
 

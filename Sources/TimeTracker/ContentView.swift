@@ -189,18 +189,16 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(width: 32, alignment: .leading)
-                DatePicker("", selection: $rangeStart, displayedComponents: .hourAndMinute)
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
+                TimePickerField(date: $rangeStart)
+                    .frame(width: 86, height: 22)
             }
             HStack {
                 Text("To")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(width: 32, alignment: .leading)
-                DatePicker("", selection: $rangeEnd, displayedComponents: .hourAndMinute)
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
+                TimePickerField(date: $rangeEnd)
+                    .frame(width: 86, height: 22)
             }
 
             DayTimelineView(
