@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UserNotifications
 
 enum ManualEntryError: LocalizedError {
     case noFreeSlot
@@ -45,6 +46,20 @@ class TimerManager: ObservableObject {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    /// Stops the timer (discarding any in-progress segment) and resyncs all counters from the store.
+    /// Call this after any external store mutation (import / replace).
+    func reloadFromStore() {
+        isRunning = false
+        timer?.invalidate()
+        timer = nil
+        startDate = nil
+        segmentStartDate = nil
+        let total = SessionStore.shared.totalSeconds(in: SessionStore.shared.sessions(on: .now))
+        elapsedSeconds = total
+        accumulatedSeconds = total
+        savedSeconds = total
+    }
+
     /// Called once on launch to seed the timer with today's already-tracked time.
     func loadTodayTime() {
         let total = SessionStore.shared.totalSeconds(in: SessionStore.shared.sessions(on: .now))
@@ -64,9 +79,10 @@ class TimerManager: ObservableObject {
             self.elapsedSeconds = self.accumulatedSeconds + Int(Date().timeIntervalSince(start))
         }
         RunLoop.main.add(timer!, forMode: .common)
+        notify(title: "Timer started", body: "Tracking time…")
     }
 
-    func stop() {
+    func stop(reason: String? = nil) {
         guard isRunning else { return }
         isRunning = false
         timer?.invalidate()
@@ -80,6 +96,33 @@ class TimerManager: ObservableObject {
         }
         savedSeconds = elapsedSeconds
         segmentStartDate = nil
+
+        let sessionStr = formatDuration(max(0, delta))
+        let todayStr   = formatDuration(elapsedSeconds)
+        let prefix     = reason.map { "\($0) — " } ?? ""
+        notify(title: "Timer stopped", body: "\(prefix)Session: \(sessionStr) · Today: \(todayStr)")
+    }
+
+    // MARK: - Notifications
+
+    private func notify(title: String, body: String) {
+        if Bundle.main.bundleIdentifier != nil {
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            )
+        } else {
+            // Fallback for swift run (no .app bundle)
+            let safeTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
+            let safeBody  = body.replacingOccurrences(of: "\"", with: "\\\"")
+            let task = Process()
+            task.launchPath = "/usr/bin/osascript"
+            task.arguments  = ["-e", "display notification \"\(safeBody)\" with title \"\(safeTitle)\""]
+            try? task.run()
+        }
     }
 
     func reset() {
@@ -116,6 +159,13 @@ class TimerManager: ObservableObject {
         accumulatedSeconds += duration
         savedSeconds += duration
         SessionStore.shared.record(TimeSession(startDate: start, duration: duration, isManual: true))
+    }
+
+    private func formatDuration(_ seconds: Int) -> String {
+        let h = seconds / 3600, m = (seconds % 3600) / 60, s = seconds % 60
+        if h > 0 { return "\(h)h \(m)m" }
+        if m > 0 { return "\(m)m \(s)s" }
+        return "\(s)s"
     }
 
     private func formatted(_ totalSeconds: Int) -> String {

@@ -102,6 +102,26 @@ class SessionStore: ObservableObject {
         return latestFit
     }
 
+    // MARK: - Backup
+
+    func exportData() -> Data? {
+        try? encoder.encode(sessions)
+    }
+
+    func importSessions(from data: Data) throws {
+        let imported = try decoder.decode([TimeSession].self, from: data)
+        let existingIDs = Set(sessions.map { $0.id })
+        let incoming = imported.filter { !existingIDs.contains($0.id) }
+        sessions.append(contentsOf: incoming)
+        sessions.sort { $0.startDate < $1.startDate }
+        persist()
+    }
+
+    func replaceAll(with imported: [TimeSession]) {
+        sessions = imported.sorted { $0.startDate < $1.startDate }
+        persist()
+    }
+
     // MARK: - Persistence
 
     private func persist() {
