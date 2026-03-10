@@ -81,3 +81,28 @@ Timer tab manual entry has two modes (segmented picker):
 - Branch naming: `feature/<short-description>` or `fix/<short-description>`.
 - Once work is complete, push the branch and open a pull/merge request against `main`.
 - Direct commits to `main` are not allowed.
+
+## Commit message conventions (Conventional Commits)
+All commit messages MUST follow this format:
+```
+<type>[optional scope]: <short description>
+
+[optional body]
+```
+
+Types and their effect on the release version:
+- `fix:` — bug fix → **patch** bump (e.g. v1.0.0 → v1.0.1)
+- `feat:` — new feature → **minor** bump (e.g. v1.0.0 → v1.1.0)
+- `feat!:` or any type with `!` or body containing `BREAKING CHANGE:` → **major** bump (e.g. v1.0.0 → v2.0.0)
+- `chore:`, `docs:`, `refactor:`, `test:`, `style:` — no version bump on their own (patch unless combined with feat/breaking)
+
+Examples:
+```
+fix: reset timer to 00:00:00 on new day
+feat: add Pomodoro mode
+feat!: replace session format with new schema
+chore: update dependencies
+docs: update README contributing section
+```
+
+The CI release workflow reads all commits since the last tag and picks the highest applicable bump type automatically.

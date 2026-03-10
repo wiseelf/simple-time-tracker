@@ -193,21 +193,53 @@ Then open the app normally.
 
 ## Contributing
 
-Every new feature or bug fix must be developed on a dedicated branch and submitted as a merge (pull) request for review before merging into `main`.
+Every new feature or bug fix must be developed on a dedicated branch and submitted as a pull request against `main`. Direct commits to `main` are not allowed.
 
-### Contributing Workflow
+### Branch naming
 
-1. Create a new branch from `main`:
+| Type | Pattern | Example |
+|---|---|---|
+| New feature | `feature/<short-description>` | `feature/pomodoro-mode` |
+| Bug fix | `fix/<short-description>` | `fix/new-day-timer-reset` |
+
+### Commit message conventions
+
+All commits must follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>[optional scope]: <short description>
+```
+
+| Type | When to use | Version bump |
+|---|---|---|
+| `fix:` | Bug fix | patch (`1.0.0` → `1.0.1`) |
+| `feat:` | New feature | minor (`1.0.0` → `1.1.0`) |
+| `feat!:` / `BREAKING CHANGE:` | Breaking change | major (`1.0.0` → `2.0.0`) |
+| `chore:` | Maintenance, deps | patch |
+| `docs:` | Documentation only | patch |
+| `refactor:` | Code restructure, no behavior change | patch |
+
+The CI release workflow reads all commits since the last tag and automatically picks the highest applicable version bump.
+
+**Examples:**
+```
+fix: reset timer to 00:00:00 on new day
+feat: add Pomodoro mode
+feat!: replace session storage format
+docs: update README contributing section
+chore: update dependencies
+```
+
+### Workflow
+
+1. Create a branch from `main`:
    ```bash
    git checkout main && git pull
-   git checkout -b feature/your-feature-name
-   # or: fix/your-bug-name
+   git checkout -b feature/your-feature   # or fix/your-bug
    ```
-2. Make your changes, commit with clear messages.
-3. Push the branch and open a pull request against `main`.
+2. Commit using conventional commit messages.
+3. Push and open a pull request against `main`.
 4. Address review comments, then merge after approval.
-
-Direct commits to `main` are not allowed.
 
 ## Data & Privacy
 
