@@ -31,11 +31,38 @@ jobs:
           minor=$(echo "$latest" | cut -d. -f2)
           patch=$(echo "$latest" | cut -d. -f3)
 
-          new_patch=$((patch + 1))
-          new_tag="v${major}.${minor}.${new_patch}"
+          # Collect all commits since the last tag (or all commits if no tag yet)
+          if [ "$latest" = "v0.0.0" ]; then
+            commits=$(git log --format="%s" 2>/dev/null || true)
+          else
+            commits=$(git log "${latest}..HEAD" --format="%s" 2>/dev/null || true)
+          fi
 
-          echo "tag=$new_tag" >> "$GITHUB_OUTPUT"
-          echo "version=${major}.${minor}.${new_patch}" >> "$GITHUB_OUTPUT"
+          # Determine bump type from conventional commit messages:
+          #   BREAKING CHANGE or !: → major
+          #   feat:                 → minor
+          #   fix: / anything else  → patch
+          bump="patch"
+          while IFS= read -r msg; do
+            if echo "$msg" | grep -qiE '(\bBREAKING[ -]CHANGE\b|^[a-z]+(\([^)]+\))?!:)'; then
+              bump="major"
+              break
+            elif echo "$msg" | grep -qiE '^feat(\([^)]+\))?:'; then
+              [ "$bump" != "major" ] && bump="minor"
+            fi
+          done <<< "$commits"
+
+          echo "Bump type: $bump (based on commits since $latest)"
+
+          case "$bump" in
+            major) new_tag="v$((major + 1)).0.0" ;;
+            minor) new_tag="v${major}.$((minor + 1)).0" ;;
+            patch) new_tag="v${major}.${minor}.$((patch + 1))" ;;
+          esac
+
+          version="${new_tag#v}"
+          echo "tag=$new_tag"     >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Next release: $new_tag"
 
       # ── Cache SPM dependencies ────────────────────────────────────────────
