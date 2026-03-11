@@ -166,11 +166,21 @@ jobs:
           mkdir -p "$MACOS_DIR" "$RES_DIR"
           cp ".build/release/${APP_NAME}" "$MACOS_DIR/${APP_NAME}"
 
-          # Copy compiled asset catalog resources (icon)
-          RESOURCES_BUILD=".build/release/TimeTracker_TimeTracker.bundle/Contents/Resources"
-          if [ -d "$RESOURCES_BUILD" ]; then
-            cp -R "$RESOURCES_BUILD/." "$RES_DIR/"
-          fi
+          # Build AppIcon.icns from source PNGs using iconutil (no Xcode required)
+          APPICONSET="Sources/TimeTracker/Assets.xcassets/AppIcon.appiconset"
+          ICONSET_DIR="/tmp/AppIcon.iconset"
+          mkdir -p "$ICONSET_DIR"
+          cp "${APPICONSET}/icon_16x16.png"     "${ICONSET_DIR}/icon_16x16.png"
+          cp "${APPICONSET}/icon_32x32.png"     "${ICONSET_DIR}/icon_16x16@2x.png"
+          cp "${APPICONSET}/icon_32x32.png"     "${ICONSET_DIR}/icon_32x32.png"
+          cp "${APPICONSET}/icon_64x64.png"     "${ICONSET_DIR}/icon_32x32@2x.png"
+          cp "${APPICONSET}/icon_128x128.png"   "${ICONSET_DIR}/icon_128x128.png"
+          cp "${APPICONSET}/icon_256x256.png"   "${ICONSET_DIR}/icon_128x128@2x.png"
+          cp "${APPICONSET}/icon_256x256.png"   "${ICONSET_DIR}/icon_256x256.png"
+          cp "${APPICONSET}/icon_512x512.png"   "${ICONSET_DIR}/icon_256x256@2x.png"
+          cp "${APPICONSET}/icon_512x512.png"   "${ICONSET_DIR}/icon_512x512.png"
+          cp "${APPICONSET}/icon_1024x1024.png" "${ICONSET_DIR}/icon_512x512@2x.png"
+          iconutil -c icns "$ICONSET_DIR" -o "${RES_DIR}/AppIcon.icns"
 
           /usr/libexec/PlistBuddy -c "Add :CFBundleName             string '${APP_NAME}'"           "${CONTENTS}/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable       string '${APP_NAME}'"           "${CONTENTS}/Info.plist"
@@ -181,7 +191,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion   string '13.0'"                  "${CONTENTS}/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :LSUIElement              bool   true"                    "${CONTENTS}/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable  bool   true"                    "${CONTENTS}/Info.plist"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleIconName         string 'AppIcon'"               "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile         string 'AppIcon'"               "${CONTENTS}/Info.plist"
 
           # Ad-hoc sign (no certificate required)
           codesign --force --deep --sign - "$APP_DIR"
