@@ -12,4 +12,11 @@ struct TimeSession: Codable, Identifiable {
         self.duration = duration
         self.isManual = isManual
     }
+
+    init(id: UUID, startDate: Date, duration: Int, isManual: Bool) {
+        self.id = id
+        self.startDate = startDate
+        self.duration = duration
+        self.isManual = isManual
+    }
 }

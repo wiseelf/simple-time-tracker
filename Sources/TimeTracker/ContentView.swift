@@ -3,7 +3,8 @@ import SwiftUI
 private struct ContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+        let next = nextValue()
+        if next > 0 { value = next }
     }
 }
 
@@ -17,6 +18,7 @@ struct ContentView: View {
     @State private var addMinutes: String = ""
     @State private var activeTab: Tab = .timer
     @State private var entryMode: EntryMode = .duration
+    @State private var rangeDay: Date = Calendar.current.startOfDay(for: Date())
     @State private var rangeStart: Date = Date().addingTimeInterval(-3600)
     @State private var rangeEnd: Date = Date()
     @State private var entryError: String?
@@ -48,6 +50,11 @@ struct ContentView: View {
         })
         .onPreferenceChange(ContentHeightKey.self) { height in
             DispatchQueue.main.async { onResize?(height) }
+        }
+        .onChange(of: activeTab) { tab in
+            if tab != .stats {
+                (NSApp.delegate as? AppDelegate)?.closeSessionsDetail()
+            }
         }
     }
 
@@ -184,6 +191,21 @@ struct ContentView: View {
 
     private var rangeEntryRows: some View {
         VStack(spacing: 8) {
+            // Day picker
+            HStack {
+                Text("Day")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, alignment: .leading)
+                DatePicker("", selection: $rangeDay, in: ...Date(), displayedComponents: .date)
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .onChange(of: rangeDay) { day in
+                        rangeStart = combining(day, time: rangeStart)
+                        rangeEnd   = combining(day, time: rangeEnd)
+                    }
+            }
+
             HStack {
                 Text("From")
                     .font(.caption)
@@ -202,7 +224,7 @@ struct ContentView: View {
             }
 
             DayTimelineView(
-                sessions: store.sessions(on: .now),
+                sessions: store.sessions(on: rangeDay),
                 rangeStart: rangeStart,
                 rangeEnd: rangeEnd
             )
@@ -215,6 +237,17 @@ struct ContentView: View {
                     .keyboardShortcut(.return, modifiers: [])
             }
         }
+    }
+
+    /// Returns `time` with its calendar date components replaced by those of `day`.
+    private func combining(_ day: Date, time: Date) -> Date {
+        let cal = Calendar.current
+        let d = cal.dateComponents([.year, .month, .day], from: day)
+        let t = cal.dateComponents([.hour, .minute, .second], from: time)
+        return cal.date(from: DateComponents(
+            year: d.year, month: d.month, day: d.day,
+            hour: t.hour, minute: t.minute, second: t.second
+        )) ?? time
     }
 
     private var footerSection: some View {
@@ -249,8 +282,10 @@ struct ContentView: View {
 
     private func commitRangeEntry() {
         entryError = nil
+        let start = combining(rangeDay, time: rangeStart)
+        let end   = combining(rangeDay, time: rangeEnd)
         do {
-            try manager.addTimeRange(start: rangeStart, end: rangeEnd)
+            try manager.addTimeRange(start: start, end: end)
         } catch {
             entryError = error.localizedDescription
         }

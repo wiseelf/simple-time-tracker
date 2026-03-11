@@ -61,9 +61,81 @@ jobs:
           esac
 
           version="${new_tag#v}"
-          echo "tag=$new_tag"     >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$new_tag"          >> "$GITHUB_OUTPUT"
+          echo "version=$version"      >> "$GITHUB_OUTPUT"
+          echo "previous_tag=$latest"  >> "$GITHUB_OUTPUT"
           echo "Next release: $new_tag"
+
+      # ── Generate changelog ────────────────────────────────────────────────
+      - name: Generate changelog
+        run: |
+          prev="${{ steps.version.outputs.previous_tag }}"
+          next="${{ steps.version.outputs.tag }}"
+
+          if [ "$prev" = "v0.0.0" ]; then
+            raw=$(git log --format="%s" 2>/dev/null || true)
+          else
+            raw=$(git log "${prev}..HEAD" --format="%s" 2>/dev/null || true)
+          fi
+
+          features=""
+          fixes=""
+          other=""
+
+          while IFS= read -r msg; do
+            [ -z "$msg" ] && continue
+            if echo "$msg" | grep -qiE '^feat(\([^)]+\))?!?:'; then
+              features="${features}- ${msg}\n"
+            elif echo "$msg" | grep -qiE '^fix(\([^)]+\))?:'; then
+              fixes="${fixes}- ${msg}\n"
+            elif echo "$msg" | grep -qiE '^\bBREAKING[ -]CHANGE\b'; then
+              features="${features}- ${msg}\n"
+            else
+              other="${other}- ${msg}\n"
+            fi
+          done <<< "$raw"
+
+          {
+            echo "## What's Changed in ${next}"
+            echo ""
+            if [ -n "$features" ]; then
+              echo "### Features"
+              printf "%b" "$features"
+              echo ""
+            fi
+            if [ -n "$fixes" ]; then
+              echo "### Bug Fixes"
+              printf "%b" "$fixes"
+              echo ""
+            fi
+            if [ -n "$other" ]; then
+              echo "### Other"
+              printf "%b" "$other"
+              echo ""
+            fi
+            echo "---"
+            echo ""
+            echo "## Install"
+            echo ""
+            echo "1. Download **TimeTracker.dmg** below."
+            echo "2. Open the DMG and drag \`TimeTracker.app\` to your Applications folder."
+            echo "3. Bypass Gatekeeper on first launch (ad-hoc signed build — no Apple certificate)."
+            echo ""
+            echo "### Gatekeeper — first launch"
+            echo ""
+            echo "**Option A — System Settings** (macOS 14 Sonoma and later)"
+            echo "1. Try to open the app — macOS will block it."
+            echo "2. Open **System Settings → Privacy & Security** and scroll down."
+            echo "3. Click **\"Open Anyway\"** next to TimeTracker and confirm with your password."
+            echo ""
+            echo "**Option B — Terminal** (any macOS version)"
+            echo '```bash'
+            echo "xattr -dr com.apple.quarantine /Applications/TimeTracker.app"
+            echo '```'
+            echo "Then open the app normally. You only need to do this once."
+            echo ""
+            echo "> For a fully trusted build with no Gatekeeper prompt, the app must be signed with a Developer ID certificate and notarized with Apple."
+          } > /tmp/RELEASE_NOTES.md
 
       # ── Cache SPM dependencies ────────────────────────────────────────────
       - name: Cache SPM
@@ -94,6 +166,12 @@ jobs:
           mkdir -p "$MACOS_DIR" "$RES_DIR"
           cp ".build/release/${APP_NAME}" "$MACOS_DIR/${APP_NAME}"
 
+          # Copy compiled asset catalog resources (icon)
+          RESOURCES_BUILD=".build/release/TimeTracker_TimeTracker.bundle/Contents/Resources"
+          if [ -d "$RESOURCES_BUILD" ]; then
+            cp -R "$RESOURCES_BUILD/." "$RES_DIR/"
+          fi
+
           /usr/libexec/PlistBuddy -c "Add :CFBundleName             string '${APP_NAME}'"           "${CONTENTS}/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable       string '${APP_NAME}'"           "${CONTENTS}/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier       string '${BUNDLE_ID}'"          "${CONTENTS}/Info.plist"
@@ -103,6 +181,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion   string '13.0'"                  "${CONTENTS}/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :LSUIElement              bool   true"                    "${CONTENTS}/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable  bool   true"                    "${CONTENTS}/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIconName         string 'AppIcon'"               "${CONTENTS}/Info.plist"
 
           # Ad-hoc sign (no certificate required)
           codesign --force --deep --sign - "$APP_DIR"
@@ -128,27 +207,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: TimeTracker ${{ steps.version.outputs.tag }}
-          body: |
-            ## Install
-
-            1. Download **TimeTracker.dmg** below.
-            2. Open the DMG and drag `TimeTracker.app` to your Applications folder.
-            3. Bypass Gatekeeper using one of the options below (ad-hoc signed build).
-
-            ### Gatekeeper — first launch
-
-            **Option A — System Settings** (macOS 14+)
-            - Try to open the app — it will be blocked.
-            - Go to **System Settings → Privacy & Security**, scroll down.
-            - Click **"Open Anyway"** next to the TimeTracker entry and confirm with your password.
-
-            **Option B — Terminal** (any macOS version)
-            ```bash
-            xattr -dr com.apple.quarantine /Applications/TimeTracker.app
-            ```
-            Then open the app normally. The warning will never appear again.
-
-            > For a fully trusted build with no Gatekeeper prompt at all, the app needs to be signed with a Developer ID certificate and notarized with Apple.
+          body_path: /tmp/RELEASE_NOTES.md
           files: dist/TimeTracker.dmg
           draft: false
           prerelease: false

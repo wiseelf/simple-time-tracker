@@ -7,7 +7,6 @@ enum ManualEntryError: LocalizedError {
     case overlap
     case invalidRange
     case futureTime
-    case notToday
 
     var errorDescription: String? {
         switch self {
@@ -15,7 +14,6 @@ enum ManualEntryError: LocalizedError {
         case .overlap:       return "This range overlaps with an existing session."
         case .invalidRange:  return "Start time must be before end time."
         case .futureTime:    return "Cannot log time in the future."
-        case .notToday:      return "Time range must be within today."
         }
     }
 }
@@ -58,6 +56,17 @@ class TimerManager: ObservableObject {
         elapsedSeconds = total
         accumulatedSeconds = total
         savedSeconds = total
+    }
+
+    /// Resyncs elapsed/accumulated/saved counters from today's stored sessions without stopping the timer.
+    /// Call this after a session edit or delete.
+    func resyncFromStore() {
+        let stored = SessionStore.shared.totalSeconds(in: SessionStore.shared.sessions(on: .now))
+        let live = isRunning ? (elapsedSeconds - accumulatedSeconds) : 0
+        accumulatedSeconds = stored
+        savedSeconds = stored
+        elapsedSeconds = stored + live
+        if isRunning { startDate = Date().addingTimeInterval(-TimeInterval(live)) }
     }
 
     /// Called once on launch to seed the timer with today's already-tracked time.
@@ -167,19 +176,22 @@ class TimerManager: ObservableObject {
         SessionStore.shared.record(TimeSession(startDate: slotStart, duration: seconds, isManual: true))
     }
 
-    /// Records an explicit time range; validates no overlap and that the range is today and not in the future.
+    /// Records an explicit time range; validates no overlap and that the range is not in the future.
     func addTimeRange(start: Date, end: Date) throws {
         let cal = Calendar.current
-        guard cal.isDateInToday(start) && cal.isDateInToday(end) else { throw ManualEntryError.notToday }
+        guard cal.isDate(start, inSameDayAs: end) else { throw ManualEntryError.invalidRange }
         guard start < end else { throw ManualEntryError.invalidRange }
         guard end <= Date() else { throw ManualEntryError.futureTime }
         guard !SessionStore.shared.hasOverlap(start: start, end: end) else { throw ManualEntryError.overlap }
 
         let duration = Int(end.timeIntervalSince(start))
-        elapsedSeconds += duration
-        accumulatedSeconds += duration
-        savedSeconds += duration
         SessionStore.shared.record(TimeSession(startDate: start, duration: duration, isManual: true))
+        // Only update the live timer counters when adding to today
+        if cal.isDateInToday(start) {
+            elapsedSeconds += duration
+            accumulatedSeconds += duration
+            savedSeconds += duration
+        }
     }
 
     private func formatDuration(_ seconds: Int) -> String {

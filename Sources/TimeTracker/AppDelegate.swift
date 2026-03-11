@@ -16,6 +16,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     var suppressAutoClose = false
 
+    private var detailPanel: KeyablePanel?
+    let detailState = SessionDetailState()
+    private var aboutPanel: NSPanel?
+
     /// Temporarily lowers the panel below alerts/sheets, runs `block`, then restores the level.
     func withPanelLowered<T>(_ block: () -> T) -> T {
         let saved = panel?.level ?? .popUpMenu
@@ -47,7 +51,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return }
         button.target = self
-        button.action = #selector(togglePanel(_:))
+        button.action = #selector(handleButtonClick(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         updateButton()
 
         manager.$isRunning
@@ -123,15 +128,65 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return image
     }
 
-    // MARK: - Panel
+    // MARK: - Status bar click handling
 
-    @objc private func togglePanel(_ sender: NSStatusBarButton) {
-        if let panel, panel.isVisible {
+    @objc private func handleButtonClick(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else { return }
+        if event.type == .rightMouseUp {
             closePanel()
+            showContextMenu(sender)
         } else {
-            openPanel()
+            if let panel, panel.isVisible {
+                closePanel()
+            } else {
+                openPanel()
+            }
         }
     }
+
+    private func showContextMenu(_ sender: NSStatusBarButton) {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "About TimeTracker", action: #selector(openAbout), keyEquivalent: "")
+            .target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Quit TimeTracker", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil  // remove so left-click still uses our action
+    }
+
+    @objc private func openAbout() {
+        if let existing = aboutPanel {
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let width: CGFloat = 320
+        let hc = NSHostingController(rootView: AboutView())
+        let size = hc.sizeThatFits(in: NSSize(width: width, height: 10_000))
+
+        let p = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: size.height),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        p.title = "About TimeTracker"
+        p.titlebarAppearsTransparent = true
+        p.isMovableByWindowBackground = true
+        p.contentView = hc.view
+        p.center()
+        p.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: p, queue: .main) { [weak self] _ in
+            self?.aboutPanel = nil
+        }
+        aboutPanel = p
+    }
+
+    // MARK: - Panel
 
     private func openPanel() {
         guard let button = statusItem.button,
@@ -145,8 +200,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }).environmentObject(TimerManager.shared)
         )
 
+        let screenMinY = NSScreen.main?.visibleFrame.minY ?? 0
+        let buttonScreenY = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil)).minY
+        let availableHeight = buttonScreenY - 6 - screenMinY - 10
         let idealSize = hc.sizeThatFits(in: NSSize(width: panelWidth, height: 10_000))
-        let panelHeight = max(200, idealSize.height)
+        let panelHeight = max(200, min(idealSize.height, availableHeight))
 
         let newPanel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
@@ -186,10 +244,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         panel = newPanel
 
-        // Close on any click outside the panel
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            guard self?.suppressAutoClose != true else { return }
-            self?.closePanel()
+        // Close on any click outside both panels
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, !self.suppressAutoClose else { return }
+            let loc = event.locationInWindow
+            let screenLoc = event.window?.convertToScreen(CGRect(origin: loc, size: .zero)).origin ?? loc
+            let inMain   = self.panel?.frame.contains(screenLoc) ?? false
+            let inDetail = self.detailPanel?.frame.contains(screenLoc) ?? false
+            if !inMain && !inDetail { self.closePanel() }
         }
 
         // Close when switching apps via Cmd+Tab or Dock click
@@ -203,7 +265,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func resizePanel(to height: CGFloat) {
         guard let panel else { return }
-        let newHeight = max(200, height)
+        let screenMinY = (panel.screen ?? NSScreen.main)?.visibleFrame.minY ?? 0
+        let maxHeight = panelAnchorTop - screenMinY - 10
+        let newHeight = max(200, min(height, maxHeight))
         let frame = panel.frame
         guard abs(frame.height - newHeight) > 2 else { return }
         panel.setFrame(
@@ -220,12 +284,74 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.removeObserver(self, name: NSApplication.didResignActiveNotification, object: nil)
         panel?.orderOut(nil)
         panel = nil
+        closeSessionsDetail()
     }
 
     @objc private func appResignedActive() {
         guard !suppressAutoClose else { return }
         closePanel()
     }
+
+    // MARK: - Sessions detail panel
+
+    func openSessionsDetail(for date: Date) {
+        detailState.date = date
+
+        // If already open, just update the date — no need to recreate the panel
+        if detailPanel != nil { return }
+
+        let panelWidth: CGFloat = 260
+        let hc = NSHostingController(
+            rootView: SessionDetailView()
+                .environmentObject(TimerManager.shared)
+                .environmentObject(detailState)
+        )
+        // Cap to the main panel's height so both panels look balanced side-by-side
+        let idealSize = hc.sizeThatFits(in: NSSize(width: panelWidth, height: 10_000))
+        let maxH = panel?.frame.height ?? 500
+        let panelHeight = max(120, min(idealSize.height, maxH))
+
+        let p = KeyablePanel(
+            contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.level = .popUpMenu
+        p.animationBehavior = .utilityWindow
+
+        let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight))
+        effect.material = .popover
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = 12
+        effect.layer?.masksToBounds = true
+
+        hc.view.frame = effect.bounds
+        hc.view.autoresizingMask = [.width, .height]
+        effect.addSubview(hc.view)
+        p.contentView = effect
+
+        // Align top edge with the main panel
+        let anchorX = (panel?.frame.maxX ?? 0) + 8
+        let anchorY = panelAnchorTop
+        p.setFrameTopLeftPoint(NSPoint(x: anchorX, y: anchorY))
+
+        // Don't steal key focus from the main panel
+        p.orderFront(nil)
+        detailPanel = p
+    }
+
+    func closeSessionsDetail() {
+        detailPanel?.orderOut(nil)
+        detailPanel = nil
+    }
+
+    var isShowingDetail: Bool { detailPanel != nil }
 
     @objc private func systemWillSleep(_ notification: Notification) {
         let reason = notification.name.rawValue.contains("screensaver")
