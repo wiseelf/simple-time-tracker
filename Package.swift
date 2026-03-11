@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "TimeTracker",
-            path: "Sources/TimeTracker"
+            path: "Sources/TimeTracker",
+            resources: [.process("Assets.xcassets")]
         )
     ]
 )

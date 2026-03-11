@@ -9,6 +9,8 @@ struct StatsView: View {
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
 
+    private var appDelegate: AppDelegate? { NSApp.delegate as? AppDelegate }
+
     var body: some View {
         VStack(spacing: 0) {
             headerSection
@@ -25,12 +27,19 @@ struct StatsView: View {
 
     private var headerSection: some View {
         VStack(spacing: 6) {
-            Picker("", selection: $period) {
+            Picker("", selection: Binding(
+                get: { period },
+                set: { newPeriod in
+                    guard newPeriod != period else { return }
+                    weekOffset = 0
+                    monthOffset = 0
+                    period = newPeriod
+                }
+            )) {
                 Text("Week").tag(Period.week)
                 Text("Month").tag(Period.month)
             }
             .pickerStyle(.segmented)
-            .onChange(of: period) { _ in weekOffset = 0; monthOffset = 0 }
 
             HStack {
                 Button { step(-1) } label: {
@@ -66,23 +75,36 @@ struct StatsView: View {
         VStack(spacing: 0) {
             if period == .week {
                 ForEach(weekRows) { row in
-                    barRow(
-                        label: row.label,
-                        seconds: row.seconds,
-                        maxSeconds: maxWeekSeconds,
-                        highlight: row.isToday,
-                        labelWidth: 30
-                    )
+                    barRow(label: row.label, seconds: row.seconds,
+                           maxSeconds: maxWeekSeconds, highlight: row.isToday, labelWidth: 30)
+                        .onTapGesture {
+                            guard row.seconds > 0 else { return }
+                            guard let delegate = appDelegate else { return }
+                            if delegate.isShowingDetail,
+                               Calendar.current.isDate(delegate.detailState.date, inSameDayAs: row.id) {
+                                delegate.closeSessionsDetail()
+                            } else {
+                                delegate.openSessionsDetail(for: row.id)
+                            }
+                        }
                 }
             } else {
                 ForEach(monthWeekRows) { row in
-                    barRow(
-                        label: row.label,
-                        seconds: row.seconds,
-                        maxSeconds: maxMonthSeconds,
-                        highlight: false,
-                        labelWidth: 52
-                    )
+                    barRow(label: row.label, seconds: row.seconds,
+                           maxSeconds: maxMonthSeconds, highlight: false, labelWidth: 38)
+                        .onTapGesture {
+                            guard row.seconds > 0 else { return }
+                            let cal = Calendar.current
+                            // Use the midpoint of the segment (day+3) so edge days that
+                            // belong to a neighbouring calendar week don't mislead us
+                            let mid = cal.date(byAdding: .day, value: 3, to: row.id) ?? row.id
+                            guard let thisWeekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
+                                  let rowWeekStart  = cal.dateInterval(of: .weekOfYear, for: mid)?.start
+                            else { return }
+                            let days = cal.dateComponents([.day], from: thisWeekStart, to: rowWeekStart).day ?? 0
+                            weekOffset = min(0, days / 7)
+                            withAnimation { period = .week }
+                        }
                 }
             }
         }
@@ -114,9 +136,15 @@ struct StatsView: View {
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(seconds > 0 ? .primary : .tertiary)
                 .frame(width: 48, alignment: .trailing)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(seconds > 0 ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.clear))
+                .frame(width: 10)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 3)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Footer
@@ -209,7 +237,7 @@ struct StatsView: View {
             }
             let sd = cal.component(.day, from: cursor)
             let ed = cal.component(.day, from: end.addingTimeInterval(-1))
-            rows.append(WeekRow(id: cursor, label: "Wk\(weekNum) \(sd)–\(ed)", seconds: secs))
+            rows.append(WeekRow(id: cursor, label: "\(sd)–\(ed)", seconds: secs))
             cursor = end
             weekNum += 1
         }
@@ -246,12 +274,18 @@ struct StatsView: View {
     }
 
     private func weekLabel(_ offset: Int) -> String {
-        if offset == 0  { return "This Week" }
-        if offset == -1 { return "Last Week" }
         let cal = Calendar.current
         guard let base  = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
               let start = cal.date(byAdding: .weekOfYear, value: offset, to: base),
               let end   = cal.date(byAdding: .day, value: 6, to: start) else { return "" }
+        let dateRange = weekRangeString(start: start, end: end)
+        if offset == 0  { return "This Week · \(dateRange)" }
+        if offset == -1 { return "Last Week · \(dateRange)" }
+        return dateRange
+    }
+
+    private func weekRangeString(start: Date, end: Date) -> String {
+        let cal = Calendar.current
         let sm = cal.component(.month, from: start), em = cal.component(.month, from: end)
         let sd = cal.component(.day,   from: start), ed = cal.component(.day,   from: end)
         if sm == em { return "\(start.formatted(.dateTime.month(.abbreviated))) \(sd)–\(ed)" }
@@ -259,12 +293,13 @@ struct StatsView: View {
     }
 
     private func monthLabel(_ offset: Int) -> String {
-        if offset == 0  { return "This Month" }
-        if offset == -1 { return "Last Month" }
         let cal = Calendar.current
         guard let base = cal.dateInterval(of: .month, for: .now)?.start,
               let date = cal.date(byAdding: .month, value: offset, to: base) else { return "" }
-        return date.formatted(.dateTime.month(.wide).year())
+        let name = date.formatted(.dateTime.month(.wide).year())
+        if offset == 0  { return "This Month · \(date.formatted(.dateTime.month(.abbreviated).year()))" }
+        if offset == -1 { return "Last Month · \(date.formatted(.dateTime.month(.abbreviated).year()))" }
+        return name
     }
 
     private func formatDuration(_ seconds: Int) -> String {
@@ -275,8 +310,6 @@ struct StatsView: View {
     }
 
     // MARK: - Export / Import
-
-    private var appDelegate: AppDelegate? { NSApp.delegate as? AppDelegate }
 
     private func exportBackup() {
         let panel = NSSavePanel()
