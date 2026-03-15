@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var aboutPanel: NSPanel?
 
     /// Temporarily lowers the panel below alerts/sheets, runs `block`, then restores the level.
+    @discardableResult
     func withPanelLowered<T>(_ block: () -> T) -> T {
         let saved = panel?.level ?? .popUpMenu
         panel?.level = .normal
