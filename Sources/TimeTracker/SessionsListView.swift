@@ -9,6 +9,7 @@ struct SessionsListView: View {
     @State private var editingID: UUID?
     @State private var editStart: Date = Date()
     @State private var editEnd: Date = Date()
+    @State private var editNote: String = ""
     @State private var editError: String?
 
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
@@ -58,6 +59,13 @@ struct SessionsListView: View {
                 Text(formatDuration(session.duration))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
+                if let note = session.note, !note.isEmpty {
+                    Text(note)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .italic()
+                        .lineLimit(2)
+                }
             }
 
             Spacer()
@@ -105,6 +113,8 @@ struct SessionsListView: View {
                     .frame(width: 86, height: 22)
             }
 
+            NoteButton(note: $editNote)
+
             if let error = editError {
                 Text(error)
                     .font(.caption2)
@@ -134,11 +144,13 @@ struct SessionsListView: View {
         editingID = session.id
         editStart = session.startDate
         editEnd = session.startDate.addingTimeInterval(TimeInterval(session.duration))
+        editNote = session.note ?? ""
         editError = nil
     }
 
     private func cancelEdit() {
         editingID = nil
+        editNote = ""
         editError = nil
     }
 
@@ -173,9 +185,11 @@ struct SessionsListView: View {
         }
 
         let duration = Int(editEnd.timeIntervalSince(editStart))
-        store.update(session, startDate: editStart, duration: duration)
+        let note = editNote.trimmingCharacters(in: .whitespaces)
+        store.update(session, startDate: editStart, duration: duration, note: note.isEmpty ? nil : note)
         if isToday { manager.resyncFromStore() }
         editingID = nil
+        editNote = ""
     }
 
     private func deleteSession(_ session: TimeSession) {

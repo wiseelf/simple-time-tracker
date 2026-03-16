@@ -30,11 +30,12 @@ Owns the `NSStatusItem` and the `NSPanel` popup.
 ### TimerManager (singleton)
 `TimerManager.shared` — `ObservableObject`.
 - `start()` / `stop(reason:)` / `reset()`.
-- `addTime(hours:minutes:)` — places session in latest free slot today (throws `ManualEntryError`).
-- `addTimeRange(start:end:)` — records explicit range, validates today/future/overlap (throws `ManualEntryError`).
+- `addTime(hours:minutes:note:)` — places session in latest free slot today (throws `ManualEntryError`).
+- `addTimeRange(start:end:note:)` — records explicit range, validates today/future/overlap (throws `ManualEntryError`).
 - `loadTodayTime()` — called once at launch to seed `elapsedSeconds`.
 - `notify(title:body:)` — sends `UNUserNotificationRequest` (guarded by bundle identifier check).
 - Sends notifications on `start()` and `stop(reason:)`.
+- `pendingNote: String` — accumulates the note for the currently running segment; attached to the session on `stop()` and then cleared.
 
 ### SessionStore (singleton)
 `SessionStore.shared` — `ObservableObject`.
@@ -42,18 +43,30 @@ Owns the `NSStatusItem` and the `NSPanel` popup.
 - Key queries: `sessions(on:)`, `sessions(weekOffset:)`, `sessions(monthOffset:)`, `totalSeconds(in:)`.
 - Overlap helpers: `hasOverlap(start:end:)`, `findFreeSlot(duration:before:)`.
 - Backup: `exportData() -> Data?`, `importSessions(from:)` (merge by id), `replaceAll(with:)`.
+- `update(_:startDate:duration:note:)` — `note` defaults to `nil`; pass an empty-trimmed string as `nil` at call sites.
 
 ### ContentView tabs
 Timer tab | Stats tab — `Picker` with `.segmented` style.
 Timer tab manual entry has two modes (segmented picker):
 - **Duration** — hours + minutes text fields; session placed in latest free slot.
 - **Range** — `TimePickerField` for From/To; `DayTimelineView` shows conflict/free status.
+Both entry modes include a `NoteButton` below the inputs; the note is cleared after a successful commit.
+When the timer is running a `NoteButton` bound to `manager.pendingNote` appears below the Start/Stop button.
+
+### NoteButton
+`NoteButton(note: Binding<String>)` — reusable compact row that previews the note text (or "Add note…" placeholder) and opens a SwiftUI `.popover` containing a multiline `TextEditor` (`NoteEditorPopover`, 280 pt wide). Used in the timer section, both manual-entry modes, and the session edit row.
 
 ### DayTimelineView
 24-hour horizontal `Canvas` timeline. Shows existing sessions (gray), selected range (blue/red), "now" marker, hour labels every 3 hours.
 
 ### TimePickerField
 `NSViewRepresentable` wrapping `TimePickerNSView`. Does NOT use AppKit first-responder chain — uses `NSEvent.addLocalMonitorForEvents` for keyboard and mouse instead. Has `isActive` flag for visual focus state. Stepper ▲▼ buttons adjust the selected segment.
+
+### SessionsListView
+Session rows display the note (if non-empty) below the duration in small italic secondary text. The inline edit row includes a `NoteButton` for add/edit/clear; the note is loaded from the session on `beginEdit` and saved via `store.update(_:startDate:duration:note:)`.
+
+### TimeSession
+`note: String?` — optional free-text annotation. Field is optional in the JSON so existing sessions without it decode correctly (set to `nil`).
 
 ### StatsView
 - Week view: bar chart Mon–Sun, today highlighted.

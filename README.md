@@ -6,9 +6,10 @@ A lightweight native macOS menu bar app for tracking time. No Dock icon, no back
 
 - **Menu bar timer** — lives entirely in the menu bar, no Dock icon
 - **Start / Stop / Reset** — track time with a single click or `Space`
+- **Session notes** — attach a free-text note to any tracked session: while the timer is running, via manual duration/range entry, or by editing an existing session in Stats
 - **Manual entry (duration)** — add time retroactively by specifying hours + minutes
 - **Manual entry (range)** — pick a day, From, and To time with a custom HH:MM picker and a 24-hour visual timeline; supports any past day
-- **Edit / Delete sessions** — tap any day in the Stats bar chart to open a session detail panel; edit start/end times or delete sessions for any past day
+- **Edit / Delete sessions** — tap any day in the Stats bar chart to open a session detail panel; edit start/end times, add or remove notes, or delete sessions for any past day
 - **Auto-stop on sleep / screensaver** — timer stops automatically when the Mac sleeps or the screensaver activates; a system notification is sent
 - **Automatic day reset** — at midnight the timer resets to `00:00:00`; if it was running, the previous day's session is saved and the timer restarts fresh for the new day
 - **Persistent sessions** — time is saved automatically; today's total is restored on relaunch
@@ -61,6 +62,7 @@ simple-time-tracker/
     ├── AboutView.swift             # About window content
     ├── DayTimelineView.swift       # 24-hour visual timeline for range entry
     ├── TimePickerField.swift       # Custom NSViewRepresentable HH:MM time input
+    ├── NoteButton.swift            # Reusable note input button with popover TextEditor
     ├── TimerManager.swift          # Timer logic (ObservableObject singleton)
     ├── SessionStore.swift          # Persistence layer (ObservableObject singleton)
     ├── TimeSession.swift           # Codable model for a single tracked session
@@ -96,8 +98,9 @@ Owns the `NSStatusItem`, the main `NSPanel` popup, the session detail panel, and
 | `start()` | Starts a `Timer` firing every second, records `segmentStartDate`, sends a start notification |
 | `stop(reason:)` | Invalidates timer, calculates delta since last save, writes a `TimeSession`, sends a stop notification |
 | `reset()` | Stops and zeroes all counters |
-| `addTime(hours:minutes:)` | Finds the latest free slot today and records a manual `TimeSession` (throws `ManualEntryError`) |
-| `addTimeRange(start:end:)` | Records a manual `TimeSession` for an explicit time range on any past day; validates same-day, start < end, not in future, no overlap (throws `ManualEntryError`) |
+| `addTime(hours:minutes:note:)` | Finds the latest free slot today and records a manual `TimeSession` (throws `ManualEntryError`) |
+| `addTimeRange(start:end:note:)` | Records a manual `TimeSession` for an explicit time range on any past day; validates same-day, start < end, not in future, no overlap (throws `ManualEntryError`) |
+| `pendingNote` | `String` published property bound to the note field while the timer is running; attached to the session on `stop()` and cleared automatically |
 | `loadTodayTime()` | Called once at launch to seed `elapsedSeconds` with today's saved total and register the midnight day-change observer |
 | `resyncFromStore()` | Resyncs elapsed/accumulated/saved counters from stored sessions without stopping the timer; call after any session edit or delete |
 
@@ -116,7 +119,7 @@ Owns the `NSStatusItem`, the main `NSPanel` popup, the session detail panel, and
 | `totalSeconds(in:)` | Sums `duration` across a session array |
 | `hasOverlap(start:end:)` | Returns `true` if a time range overlaps any existing session on the same day |
 | `findFreeSlot(duration:before:)` | Finds the latest free gap today that fits the given duration |
-| `update(_:startDate:duration:)` | Replaces a session's start time and duration in-place, preserving its `id` |
+| `update(_:startDate:duration:note:)` | Replaces a session's start time, duration, and note in-place, preserving its `id` |
 | `exportData()` | Encodes all sessions to JSON `Data` |
 | `importSessions(from:)` | Decodes and merges sessions (deduped by `id`) |
 | `replaceAll(with:)` | Replaces all sessions with the provided array |
@@ -129,16 +132,20 @@ struct TimeSession: Codable, Identifiable {
     let startDate: Date   // ISO-8601 in JSON
     let duration: Int     // seconds
     let isManual: Bool    // true for manually entered time
+    var note: String?     // optional free-text annotation
 }
 ```
+
+`note` is optional in JSON so existing session files without the field decode correctly (the property is set to `nil`).
 
 ### `ContentView`
 
 Two-tab layout (Timer / Stats) using a `.segmented` `Picker`.
 
 - **Timer tab** — large monospaced countdown display, Start/Stop button (`Space` shortcut), manual time entry form.
-  - *Duration mode* — enter hours + minutes; the session is placed in the latest free slot today.
-  - *Range mode* — pick a **Day** (any past date), **From**, and **To** using a `DatePicker` and `TimePickerField`; a `DayTimelineView` shows existing sessions and the selected range (blue = valid, red = conflict).
+  - While the timer is running a `NoteButton` appears below the Start/Stop button, bound to `TimerManager.pendingNote`.
+  - *Duration mode* — enter hours + minutes; the session is placed in the latest free slot today. A `NoteButton` is shown below the time fields.
+  - *Range mode* — pick a **Day** (any past date), **From**, and **To** using a `DatePicker` and `TimePickerField`; a `DayTimelineView` shows existing sessions and the selected range (blue = valid, red = conflict). A `NoteButton` is shown above the Add button.
 - **Stats tab** — delegates to `StatsView`.
 
 ### `StatsView`
@@ -152,7 +159,11 @@ Two-tab layout (Timer / Stats) using a `.segmented` `Picker`.
 
 ### `SessionsListView`
 
-Shows all sessions for a given `date` with inline edit and delete. Edit expands a row with two `TimePickerField` pickers (same validation rules as range entry, but restricted to the session's original calendar day). Calls `SessionStore.update()` + `TimerManager.resyncFromStore()` on save, and `SessionStore.delete()` + `resyncFromStore()` on delete.
+Shows all sessions for a given `date` with inline edit and delete. Session rows display the note (if set) below the duration in small italic secondary text. Edit expands a row with two `TimePickerField` pickers (same validation rules as range entry, but restricted to the session's original calendar day) and a `NoteButton` for add/edit/clear. Calls `SessionStore.update(_:startDate:duration:note:)` + `TimerManager.resyncFromStore()` on save, and `SessionStore.delete()` + `resyncFromStore()` on delete.
+
+### `NoteButton`
+
+A reusable `View` that displays a compact note preview row (note text or "Add note…" placeholder with a note icon and an inline clear ×). Tapping opens a SwiftUI `.popover` containing `NoteEditorPopover`: a 280 pt wide panel with a multiline `TextEditor`, a character count, and a **Done** button (`⌘↩`). Used in the timer section, both manual-entry modes, and the session edit row.
 
 ### `SessionDetailView` + `SessionDetailState`
 
