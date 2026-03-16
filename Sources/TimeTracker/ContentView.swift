@@ -16,6 +16,8 @@ struct ContentView: View {
 
     @State private var addHours: String = ""
     @State private var addMinutes: String = ""
+    @State private var durationNote: String = ""
+    @State private var rangeNote: String = ""
     @State private var activeTab: Tab = .timer
     @State private var entryMode: EntryMode = .duration
     @State private var rangeDay: Date = Calendar.current.startOfDay(for: Date())
@@ -127,7 +129,13 @@ struct ContentView: View {
             .tint(manager.isRunning ? .red : .green)
             .controlSize(.large)
             .keyboardShortcut(.space, modifiers: [])
+
+            if manager.isRunning {
+                NoteButton(note: $manager.pendingNote)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: manager.isRunning)
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
     }
@@ -165,27 +173,31 @@ struct ContentView: View {
     }
 
     private var durationEntryRow: some View {
-        HStack(spacing: 6) {
-            Group {
-                TextField("0", text: $addHours)
-                    .focused($focusedField, equals: .hours)
-                    .onChange(of: addHours) { v in addHours = sanitize(v, max: 99) }
-                Text("h")
-                    .foregroundStyle(.secondary)
-                TextField("0", text: $addMinutes)
-                    .focused($focusedField, equals: .minutes)
-                    .onChange(of: addMinutes) { v in addMinutes = sanitize(v, max: 59) }
-                Text("m")
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Group {
+                    TextField("0", text: $addHours)
+                        .focused($focusedField, equals: .hours)
+                        .onChange(of: addHours) { v in addHours = sanitize(v, max: 99) }
+                    Text("h")
+                        .foregroundStyle(.secondary)
+                    TextField("0", text: $addMinutes)
+                        .focused($focusedField, equals: .minutes)
+                        .onChange(of: addMinutes) { v in addMinutes = sanitize(v, max: 59) }
+                    Text("m")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.system(.body, design: .monospaced))
+
+                Spacer()
+
+                Button("Add") { commitDurationEntry() }
+                    .buttonStyle(.bordered)
+                    .disabled(addHours.isEmpty && addMinutes.isEmpty)
+                    .keyboardShortcut(.return, modifiers: [])
             }
-            .font(.system(.body, design: .monospaced))
 
-            Spacer()
-
-            Button("Add") { commitDurationEntry() }
-                .buttonStyle(.bordered)
-                .disabled(addHours.isEmpty && addMinutes.isEmpty)
-                .keyboardShortcut(.return, modifiers: [])
+            NoteButton(note: $durationNote)
         }
     }
 
@@ -230,6 +242,8 @@ struct ContentView: View {
             )
             .padding(.top, 2)
 
+            NoteButton(note: $rangeNote)
+
             HStack {
                 Spacer()
                 Button("Add") { commitRangeEntry() }
@@ -270,10 +284,12 @@ struct ContentView: View {
         entryError = nil
         let h = Int(addHours) ?? 0
         let m = Int(addMinutes) ?? 0
+        let note = durationNote.trimmingCharacters(in: .whitespaces)
         do {
-            try manager.addTime(hours: h, minutes: m)
+            try manager.addTime(hours: h, minutes: m, note: note.isEmpty ? nil : note)
             addHours = ""
             addMinutes = ""
+            durationNote = ""
             focusedField = nil
         } catch {
             entryError = error.localizedDescription
@@ -284,8 +300,10 @@ struct ContentView: View {
         entryError = nil
         let start = combining(rangeDay, time: rangeStart)
         let end   = combining(rangeDay, time: rangeEnd)
+        let note = rangeNote.trimmingCharacters(in: .whitespaces)
         do {
-            try manager.addTimeRange(start: start, end: end)
+            try manager.addTimeRange(start: start, end: end, note: note.isEmpty ? nil : note)
+            rangeNote = ""
         } catch {
             entryError = error.localizedDescription
         }
