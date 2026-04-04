@@ -53,6 +53,7 @@ class TimerManager: ObservableObject {
         timer = nil
         startDate = nil
         segmentStartDate = nil
+        pendingNote = ""
         let total = SessionStore.shared.totalSeconds(in: SessionStore.shared.sessions(on: .now))
         elapsedSeconds = total
         accumulatedSeconds = total
@@ -123,8 +124,7 @@ class TimerManager: ObservableObject {
 
         let delta = elapsedSeconds - savedSeconds
         if delta > 0, let seg = segmentStartDate {
-            let note = pendingNote.trimmingCharacters(in: .whitespaces)
-            SessionStore.shared.record(TimeSession(startDate: seg, duration: delta, note: note.isEmpty ? nil : note))
+            SessionStore.shared.record(TimeSession(startDate: seg, duration: delta, note: pendingNote.trimmedOrNil))
         }
         pendingNote = ""
         savedSeconds = elapsedSeconds
