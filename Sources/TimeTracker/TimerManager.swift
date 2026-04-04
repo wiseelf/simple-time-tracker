@@ -139,23 +139,14 @@ class TimerManager: ObservableObject {
     // MARK: - Notifications
 
     private func notify(title: String, body: String) {
-        if Bundle.main.bundleIdentifier != nil {
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            content.sound = .default
-            UNUserNotificationCenter.current().add(
-                UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            )
-        } else {
-            // Fallback for swift run (no .app bundle)
-            let safeTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
-            let safeBody  = body.replacingOccurrences(of: "\"", with: "\\\"")
-            let task = Process()
-            task.launchPath = "/usr/bin/osascript"
-            task.arguments  = ["-e", "tell application \"System Events\" to display notification \"\(safeBody)\" with title \"\(safeTitle)\""]
-            try? task.run()
-        }
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        )
     }
 
     func reset() {
