@@ -194,13 +194,9 @@ final class TimePickerNSView: NSView {
             setActive(true)
             adjust(by: p.y > bounds.midY ? 1 : -1)
         } else {
-            let newSeg: Segment = p.x < colonX ? .hour : .minute
-            if isActive && newSeg == segment {
-                // already active on same segment — keep active
-            } else {
-                segment = newSeg
-            }
+            segment = p.x < colonX ? .hour : .minute
             setActive(true)
+            needsDisplay = true  // redraw even if setActive was a no-op (already active)
         }
     }
 
