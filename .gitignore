@@ -30,6 +30,10 @@ dist/
 *.swo
 *.orig
 
+# Superpowers / AI tooling
+.superpowers/
+docs/superpowers/
+
 # Env / secrets
 .env
 *.pem

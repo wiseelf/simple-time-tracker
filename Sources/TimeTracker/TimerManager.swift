@@ -53,6 +53,7 @@ class TimerManager: ObservableObject {
         timer = nil
         startDate = nil
         segmentStartDate = nil
+        pendingNote = ""
         let total = SessionStore.shared.totalSeconds(in: SessionStore.shared.sessions(on: .now))
         elapsedSeconds = total
         accumulatedSeconds = total
@@ -123,8 +124,7 @@ class TimerManager: ObservableObject {
 
         let delta = elapsedSeconds - savedSeconds
         if delta > 0, let seg = segmentStartDate {
-            let note = pendingNote.trimmingCharacters(in: .whitespaces)
-            SessionStore.shared.record(TimeSession(startDate: seg, duration: delta, note: note.isEmpty ? nil : note))
+            SessionStore.shared.record(TimeSession(startDate: seg, duration: delta, note: pendingNote.trimmedOrNil))
         }
         pendingNote = ""
         savedSeconds = elapsedSeconds
@@ -148,7 +148,9 @@ class TimerManager: ObservableObject {
                 UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
             )
         } else {
-            // Fallback for swift run (no .app bundle)
+            // Fallback for swift run / raw binary (no .app bundle).
+            // Note: clicking "Show" on these notifications opens Script Editor —
+            // that's a macOS limitation when sending notifications outside a bundle.
             let safeTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
             let safeBody  = body.replacingOccurrences(of: "\"", with: "\\\"")
             let task = Process()

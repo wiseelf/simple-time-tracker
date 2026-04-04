@@ -185,8 +185,7 @@ struct SessionsListView: View {
         }
 
         let duration = Int(editEnd.timeIntervalSince(editStart))
-        let note = editNote.trimmingCharacters(in: .whitespaces)
-        store.update(session, startDate: editStart, duration: duration, note: note.isEmpty ? nil : note)
+        store.update(session, startDate: editStart, duration: duration, note: editNote.trimmedOrNil)
         if isToday { manager.resyncFromStore() }
         editingID = nil
         editNote = ""
