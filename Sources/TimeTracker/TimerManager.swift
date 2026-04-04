@@ -153,7 +153,7 @@ class TimerManager: ObservableObject {
             let safeBody  = body.replacingOccurrences(of: "\"", with: "\\\"")
             let task = Process()
             task.launchPath = "/usr/bin/osascript"
-            task.arguments  = ["-e", "display notification \"\(safeBody)\" with title \"\(safeTitle)\""]
+            task.arguments  = ["-e", "tell application \"System Events\" to display notification \"\(safeBody)\" with title \"\(safeTitle)\""]
             try? task.run()
         }
     }
