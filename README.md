@@ -54,7 +54,8 @@ simple-time-tracker/
 └── Sources/TimeTracker/
     ├── main.swift                  # Entry point — NSApplication setup
     ├── AppDelegate.swift           # Status bar item, main panel, detail panel, context menu, About window
-    ├── ContentView.swift           # Main SwiftUI view (Timer tab + Stats tab)
+    ├── ContentView.swift           # Main SwiftUI view (Timer / Add / Stats tabs)
+    ├── AddView.swift               # Manual time entry (duration and range modes)
     ├── StatsView.swift             # Bar-chart statistics view with export/import
     ├── SessionsListView.swift      # Per-day session list with inline edit/delete
     ├── SessionDetailView.swift     # Floating detail panel shown alongside the main panel
@@ -66,6 +67,7 @@ simple-time-tracker/
     ├── TimerManager.swift          # Timer logic (ObservableObject singleton)
     ├── SessionStore.swift          # Persistence layer (ObservableObject singleton)
     ├── TimeSession.swift           # Codable model for a single tracked session
+    ├── Extensions.swift            # Shared Swift extensions (String.trimmedOrNil)
     └── Assets.xcassets/            # App icon asset catalog
 ```
 
@@ -140,13 +142,20 @@ struct TimeSession: Codable, Identifiable {
 
 ### `ContentView`
 
-Two-tab layout (Timer / Stats) using a `.segmented` `Picker`.
+Three-tab layout (Timer / Add / Stats) using a `.segmented` `Picker`.
 
-- **Timer tab** — large monospaced countdown display, Start/Stop button (`Space` shortcut), manual time entry form.
-  - While the timer is running a `NoteButton` appears below the Start/Stop button, bound to `TimerManager.pendingNote`.
-  - *Duration mode* — enter hours + minutes; the session is placed in the latest free slot today. A `NoteButton` is shown below the time fields.
-  - *Range mode* — pick a **Day** (any past date), **From**, and **To** using a `DatePicker` and `TimePickerField`; a `DayTimelineView` shows existing sessions and the selected range (blue = valid, red = conflict). A `NoteButton` is shown above the Add button.
+- **Timer tab** — large monospaced countdown display, Start/Stop button (`Space` shortcut). While the timer is running a `NoteButton` appears below the button, bound to `TimerManager.pendingNote`.
+- **Add tab** — delegates to `AddView` for all manual time entry.
 - **Stats tab** — delegates to `StatsView`.
+
+### `AddView`
+
+Manual time entry with two modes (segmented picker):
+
+- *Duration mode* — enter hours + minutes; the session is placed in the latest free slot today. A `NoteButton` is shown below the time fields.
+- *Range mode* — pick a **Day** (any past date), **From**, and **To** using a `DatePicker` and `TimePickerField`; a `DayTimelineView` shows existing sessions and the selected range (blue = valid, red = conflict). A `NoteButton` is shown above the Add button.
+
+After a successful add the view stays on the Add tab.
 
 ### `StatsView`
 
