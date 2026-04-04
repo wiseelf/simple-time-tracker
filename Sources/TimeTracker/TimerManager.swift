@@ -139,14 +139,25 @@ class TimerManager: ObservableObject {
     // MARK: - Notifications
 
     private func notify(title: String, body: String) {
-        guard Bundle.main.bundleIdentifier != nil else { return }
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        )
+        if Bundle.main.bundleIdentifier != nil {
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            )
+        } else {
+            // Fallback for swift run / raw binary (no .app bundle).
+            // Note: clicking "Show" on these notifications opens Script Editor —
+            // that's a macOS limitation when sending notifications outside a bundle.
+            let safeTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
+            let safeBody  = body.replacingOccurrences(of: "\"", with: "\\\"")
+            let task = Process()
+            task.launchPath = "/usr/bin/osascript"
+            task.arguments  = ["-e", "display notification \"\(safeBody)\" with title \"\(safeTitle)\""]
+            try? task.run()
+        }
     }
 
     func reset() {
