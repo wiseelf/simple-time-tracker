@@ -39,3 +39,6 @@ docs/superpowers/
 *.pem
 *.p12
 *.p8
+
+#worktrees
+.worktrees/
