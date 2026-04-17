@@ -119,23 +119,23 @@ jobs:
             echo ""
             echo "1. Download **TimeTracker.dmg** below."
             echo "2. Open the DMG and drag \`TimeTracker.app\` to your Applications folder."
-            echo "3. Bypass Gatekeeper on first launch (ad-hoc signed build — no Apple certificate)."
-            echo ""
-            echo "### Gatekeeper — first launch"
-            echo ""
-            echo "**Option A — System Settings** (macOS 14 Sonoma and later)"
-            echo "1. Try to open the app — macOS will block it."
-            echo "2. Open **System Settings → Privacy & Security** and scroll down."
-            echo "3. Click **\"Open Anyway\"** next to TimeTracker and confirm with your password."
-            echo ""
-            echo "**Option B — Terminal** (any macOS version)"
-            echo '```bash'
-            echo "xattr -dr com.apple.quarantine /Applications/TimeTracker.app"
-            echo '```'
-            echo "Then open the app normally. You only need to do this once."
-            echo ""
-            echo "> For a fully trusted build with no Gatekeeper prompt, the app must be signed with a Developer ID certificate and notarized with Apple."
+            echo "3. Launch the app."
           } > /tmp/RELEASE_NOTES.md
+
+      # ── Import signing certificate ────────────────────────────────────────
+      - name: Import certificate
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          echo "$DEVELOPER_ID_P12" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import /tmp/cert.p12 -k build.keychain \
+            -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          rm /tmp/cert.p12
 
       # ── Cache SPM dependencies ────────────────────────────────────────────
       - name: Cache SPM
@@ -156,7 +156,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           APP_NAME="TimeTracker"
-          BUNDLE_ID="com.wiseelf.timetracker"
+          BUNDLE_ID="com.kaidalov.stt"
           APP_DIR="dist/${APP_NAME}.app"
           CONTENTS="${APP_DIR}/Contents"
           MACOS_DIR="${CONTENTS}/MacOS"
@@ -193,8 +193,15 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable  bool   true"                    "${CONTENTS}/Info.plist"
           /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile         string 'AppIcon'"               "${CONTENTS}/Info.plist"
 
-          # Ad-hoc sign (no certificate required)
-          codesign --force --deep --sign - "$APP_DIR"
+      # ── Sign ──────────────────────────────────────────────────────────────
+      - name: Sign .app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          codesign --force --deep --sign "Developer ID Application: Serhii Kaidalov (${APPLE_TEAM_ID})" \
+            --options runtime \
+            --entitlements Sources/TimeTracker/TimeTracker.entitlements \
+            dist/TimeTracker.app
 
       # ── Package DMG ───────────────────────────────────────────────────────
       - name: Create DMG
@@ -203,6 +210,23 @@ jobs:
             -srcfolder dist/TimeTracker.app \
             -ov -format UDZO \
             dist/TimeTracker.dmg
+
+      # ── Notarize ──────────────────────────────────────────────────────────
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcrun notarytool submit dist/TimeTracker.dmg \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+      # ── Staple ────────────────────────────────────────────────────────────
+      - name: Staple notarization ticket
+        run: xcrun stapler staple dist/TimeTracker.dmg
 
       # ── Tag & Release ─────────────────────────────────────────────────────
       - name: Tag commit
