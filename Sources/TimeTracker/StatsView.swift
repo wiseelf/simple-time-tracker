@@ -5,6 +5,7 @@ struct StatsView: View {
     enum Period { case week, month }
 
     @ObservedObject private var store = SessionStore.shared
+    @ObservedObject private var timerManager = TimerManager.shared
     @State private var period: Period = .week
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
@@ -203,6 +204,13 @@ struct StatsView: View {
         let id: Date; let label: String; let seconds: Int
     }
 
+    /// Seconds of the currently running segment that haven't been saved to the store yet.
+    private var liveExtraSeconds: Int {
+        guard timerManager.isRunning else { return 0 }
+        let stored = store.totalSeconds(in: store.sessions(on: .now))
+        return max(0, timerManager.elapsedSeconds - stored)
+    }
+
     private var weekRows: [DayRow] {
         let cal = Calendar.current
         guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
@@ -211,6 +219,7 @@ struct StatsView: View {
         return (0..<7).compactMap { i in
             guard let day = cal.date(byAdding: .day, value: i, to: start) else { return nil }
             let secs = store.totalSeconds(in: store.sessions(on: day))
+                + (cal.isDateInToday(day) ? liveExtraSeconds : 0)
             let raw = day.formatted(.dateTime.weekday(.abbreviated))
             return DayRow(id: day, label: String(raw.prefix(3)), seconds: secs,
                           isToday: cal.isDateInToday(day))
@@ -233,6 +242,7 @@ struct StatsView: View {
             var secs = 0
             while dayCursor < end {
                 secs += store.totalSeconds(in: store.sessions(on: dayCursor))
+                if cal.isDateInToday(dayCursor) { secs += liveExtraSeconds }
                 dayCursor = cal.date(byAdding: .day, value: 1, to: dayCursor) ?? dayCursor.addingTimeInterval(86400)
             }
             let sd = cal.component(.day, from: cursor)
