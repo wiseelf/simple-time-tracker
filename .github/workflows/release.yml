@@ -7,17 +7,17 @@ on:
 jobs:
   release:
     name: Build & Release
-    runs-on: macos-15          # Xcode 16, Swift 6, macOS 15 runner
+    runs-on: macos-15 # Xcode 16, Swift 6, macOS 15 runner
 
     permissions:
-      contents: write          # needed to create releases and push tags
+      contents: write # needed to create releases and push tags
 
     steps:
       # ── Checkout ──────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0       # full history so we can read all tags
+          fetch-depth: 0 # full history so we can read all tags
 
       # ── Determine next version ────────────────────────────────────────────
       - name: Bump version
@@ -198,7 +198,7 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          codesign --force --deep --sign "Developer ID Application: Serhii Kaidalov (${APPLE_TEAM_ID})" \
+          codesign --force --deep --sign "$APPLE_DEVELOPER (${APPLE_TEAM_ID})" \
             --options runtime \
             --entitlements Sources/TimeTracker/TimeTracker.entitlements \
             dist/TimeTracker.app
