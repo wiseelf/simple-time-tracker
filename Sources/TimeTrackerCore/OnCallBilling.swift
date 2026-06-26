@@ -4,18 +4,24 @@ public enum OnCallBilling {
 
     public static func billableMinutes(on date: Date,
                                        rotations: [OnCallRotationBlock],
+                                       rules: [RecurrenceRule] = [],
+                                       exceptions: [ScheduleException] = [],
                                        settings: OnCallSettings) -> Int {
-        let billable = billableRangesList(on: date, rotations: rotations, settings: settings)
-        return billable.reduce(0) { $0 + ($1.1 - $1.0) }
+        billableRangesList(on: date, rotations: rotations, rules: rules,
+                           exceptions: exceptions, settings: settings)
+            .reduce(0) { $0 + ($1.1 - $1.0) }
     }
 
     public static func activeMinutesWithinBillable(on date: Date,
                                                     sessions: [TimeSession],
                                                     rotations: [OnCallRotationBlock],
+                                                    rules: [RecurrenceRule] = [],
+                                                    exceptions: [ScheduleException] = [],
                                                     settings: OnCallSettings) -> Int {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: date)
-        let billableRanges = billableRangesList(on: date, rotations: rotations, settings: settings)
+        let billableRanges = billableRangesList(on: date, rotations: rotations, rules: rules,
+                                                exceptions: exceptions, settings: settings)
         guard !billableRanges.isEmpty else { return 0 }
 
         var total = 0
@@ -35,10 +41,14 @@ public enum OnCallBilling {
     public static func passiveMinutes(on date: Date,
                                        sessions: [TimeSession],
                                        rotations: [OnCallRotationBlock],
+                                       rules: [RecurrenceRule] = [],
+                                       exceptions: [ScheduleException] = [],
                                        settings: OnCallSettings) -> Int {
-        let billable = billableMinutes(on: date, rotations: rotations, settings: settings)
+        let billable = billableMinutes(on: date, rotations: rotations, rules: rules,
+                                       exceptions: exceptions, settings: settings)
         let active   = activeMinutesWithinBillable(on: date, sessions: sessions,
-                                                   rotations: rotations, settings: settings)
+                                                   rotations: rotations, rules: rules,
+                                                   exceptions: exceptions, settings: settings)
         return max(0, billable - active)
     }
 
@@ -55,12 +65,15 @@ public enum OnCallBilling {
 
     static func billableRangesList(on date: Date,
                                    rotations: [OnCallRotationBlock],
+                                   rules: [RecurrenceRule] = [],
+                                   exceptions: [ScheduleException] = [],
                                    settings: OnCallSettings) -> [(Int, Int)] {
         let cal = Calendar.current
-        let weekday = cal.component(.weekday, from: date)
+        let weekday  = cal.component(.weekday, from: date)
         let dayStart = cal.startOfDay(for: date)
 
         var onCallRanges: [(Int, Int)] = []
+
         for block in rotations {
             let blockStart = cal.startOfDay(for: block.startDate)
             let blockEnd   = cal.startOfDay(for: block.endDate)
@@ -69,11 +82,18 @@ public enum OnCallBilling {
                 onCallRanges.append((sched.startMinute, sched.endMinute))
             }
         }
+
+        for rule in rules {
+            if let window = rule.resolvedWindow(on: date, exceptions: exceptions) {
+                onCallRanges.append(window)
+            }
+        }
+
         guard !onCallRanges.isEmpty else { return [] }
         let merged = mergeRanges(onCallRanges)
         let nonBillable = settings.nonBillableRules
             .filter { $0.daysOfWeek.contains(weekday) }
-            .map { ($0.startMinute, $0.endMinute) }
+            .map    { ($0.startMinute, $0.endMinute) }
         return subtractRanges(merged, subtract: nonBillable)
     }
 
