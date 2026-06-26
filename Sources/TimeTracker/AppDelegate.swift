@@ -290,6 +290,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             eventMonitor = nil
         }
         NotificationCenter.default.removeObserver(self, name: NSApplication.didResignActiveNotification, object: nil)
+        AppUIState.shared.showSettings = false
         panel?.orderOut(nil)
         panel = nil
         closeSessionsDetail()
