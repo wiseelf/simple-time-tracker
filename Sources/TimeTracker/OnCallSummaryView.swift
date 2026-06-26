@@ -1,13 +1,12 @@
 import SwiftUI
 
 struct OnCallSummaryView: View {
-    @ObservedObject var store: OnCallStore
+    @ObservedObject var store:        OnCallStore
     @ObservedObject var sessionStore: SessionStore
 
     enum Period { case week, month }
-    @State private var period: Period = .week
-    @State private var weekOffset: Int = 0
-    @State private var monthOffset: Int = 0
+    let period: Period
+    @Binding var offset: Int
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,42 +19,37 @@ struct OnCallSummaryView: View {
     }
 
     private var periodStart: Date? { periodDates.first }
-    private var periodEnd: Date? { periodDates.last }
+    private var periodEnd:   Date? { periodDates.last  }
+
+    // MARK: - Header (nav arrows only — period picker owned by OnCallView)
 
     private var summaryHeader: some View {
-        VStack(spacing: 6) {
-            Picker("", selection: $period) {
-                Text("Week").tag(Period.week)
-                Text("Month").tag(Period.month)
+        HStack {
+            Button { offset -= 1 } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
-            .pickerStyle(.segmented)
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
 
-            HStack {
-                Button { stepPeriod(-1) } label: {
-                    Image(systemName: "chevron.left")
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+            Spacer()
+            Text(periodLabel).font(.subheadline).fontWeight(.medium)
+            Spacer()
 
-                Spacer()
-                Text(periodLabel)
-                    .font(.subheadline).fontWeight(.medium)
-                Spacer()
-
-                Button { stepPeriod(+1) } label: {
-                    Image(systemName: "chevron.right")
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+            Button { offset += 1 } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
+
+    // MARK: - Summary rows
 
     private var summaryRows: some View {
         VStack(spacing: 0) {
@@ -94,9 +88,13 @@ struct OnCallSummaryView: View {
                 .frame(width: 52, alignment: .trailing)
             Text(row.activeMinutes > 0 ? formatMins(row.activeMinutes) : "—")
                 .frame(width: 46, alignment: .trailing)
-                .foregroundStyle(row.activeMinutes > 0 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.secondary.opacity(0.5)))
+                .foregroundStyle(row.activeMinutes > 0
+                    ? AnyShapeStyle(Color.orange)
+                    : AnyShapeStyle(Color.secondary.opacity(0.5)))
             if store.settings.incomeTrackingEnabled {
-                Text(row.income > 0 ? String(format: "%@%.0f", store.settings.currencySymbol, row.income) : "—")
+                Text(row.income > 0
+                     ? String(format: "%@%.0f", store.settings.currencySymbol, row.income)
+                     : "—")
                     .frame(width: 48, alignment: .trailing)
             }
         }
@@ -116,9 +114,13 @@ struct OnCallSummaryView: View {
                 .frame(width: 52, alignment: .trailing)
             Text(totals.active > 0 ? formatMins(totals.active) : "—")
                 .frame(width: 46, alignment: .trailing)
-                .foregroundStyle(totals.active > 0 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.secondary.opacity(0.5)))
+                .foregroundStyle(totals.active > 0
+                    ? AnyShapeStyle(Color.orange)
+                    : AnyShapeStyle(Color.secondary.opacity(0.5)))
             if store.settings.incomeTrackingEnabled {
-                Text(totals.income > 0 ? String(format: "%@%.0f", store.settings.currencySymbol, totals.income) : "—")
+                Text(totals.income > 0
+                     ? String(format: "%@%.0f", store.settings.currencySymbol, totals.income)
+                     : "—")
                     .frame(width: 48, alignment: .trailing)
             }
         }
@@ -140,82 +142,82 @@ struct OnCallSummaryView: View {
 
     private var summaryData: [SummaryRow] {
         let cal = Calendar.current
-        let dates = periodDates
-        return dates.map { day in
+        return periodDates.map { day in
             let sessions = sessionStore.sessions(on: day)
-            let passive = OnCallBilling.passiveMinutes(on: day, sessions: sessions,
-                                                       rotations: store.rotations, settings: store.settings)
-            let active  = OnCallBilling.activeMinutesWithinBillable(on: day, sessions: sessions,
-                                                                     rotations: store.rotations, settings: store.settings)
-            let income  = incomeFor(day: day, passive: passive, active: active)
+            let passive = OnCallBilling.passiveMinutes(
+                on: day, sessions: sessions,
+                rotations: store.rotations,
+                rules: store.rules,
+                exceptions: store.exceptions,
+                settings: store.settings)
+            let active = OnCallBilling.activeMinutesWithinBillable(
+                on: day, sessions: sessions,
+                rotations: store.rotations,
+                rules: store.rules,
+                exceptions: store.exceptions,
+                settings: store.settings)
             let label: String
             if period == .week {
-                let raw = day.formatted(.dateTime.weekday(.abbreviated))
-                label = String(raw.prefix(3))
+                label = String(day.formatted(.dateTime.weekday(.abbreviated)).prefix(3))
             } else {
                 label = "\(cal.component(.day, from: day))"
             }
             return SummaryRow(date: day, label: label, isToday: cal.isDateInToday(day),
-                              passiveMinutes: passive, activeMinutes: active, income: income)
+                              passiveMinutes: passive, activeMinutes: active,
+                              income: incomeFor(day: day, passive: passive, active: active))
         }
         .filter { $0.passiveMinutes > 0 || $0.activeMinutes > 0 }
     }
+
+    // MARK: - Period computation
 
     private var periodDates: [Date] {
         let cal = Calendar.current
         if period == .week {
             guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-                  let start = cal.date(byAdding: .weekOfYear, value: weekOffset, to: weekStart)
+                  let start     = cal.date(byAdding: .weekOfYear, value: offset, to: weekStart)
             else { return [] }
             return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
         } else {
             guard let monthStart = cal.dateInterval(of: .month, for: .now)?.start,
-                  let start = cal.date(byAdding: .month, value: monthOffset, to: monthStart),
-                  let monthEnd = cal.date(byAdding: .month, value: 1, to: start)
+                  let start      = cal.date(byAdding: .month, value: offset, to: monthStart),
+                  let monthEnd   = cal.date(byAdding: .month, value: 1, to: start)
             else { return [] }
             var d = start, all: [Date] = []
-            while d < monthEnd { all.append(d); d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86400) }
+            while d < monthEnd {
+                all.append(d)
+                d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86400)
+            }
             return all
         }
-    }
-
-    private func incomeFor(day: Date, passive: Int, active: Int) -> Double {
-        guard store.settings.incomeTrackingEnabled,
-              let rate = OnCallBilling.rate(on: day, settings: store.settings) else { return 0 }
-        let passiveIncome = Double(passive) / 60.0 * rate * store.settings.passiveMultiplier
-        let activeIncome  = Double(active)  / 60.0 * rate * store.settings.activeMultiplier
-        return passiveIncome + activeIncome
-    }
-
-    // MARK: - Navigation
-
-    private var currentOffset: Int { period == .week ? weekOffset : monthOffset }
-
-    private func stepPeriod(_ delta: Int) {
-        if period == .week { weekOffset  += delta }
-        else               { monthOffset += delta }
     }
 
     private var periodLabel: String {
         let cal = Calendar.current
         if period == .week {
             guard let base  = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-                  let start = cal.date(byAdding: .weekOfYear, value: weekOffset, to: base),
+                  let start = cal.date(byAdding: .weekOfYear, value: offset, to: base),
                   let end   = cal.date(byAdding: .day, value: 6, to: start) else { return "" }
             let sm = cal.component(.month, from: start), em = cal.component(.month, from: end)
-            let sd = cal.component(.day, from: start), ed = cal.component(.day, from: end)
+            let sd = cal.component(.day,   from: start), ed = cal.component(.day,   from: end)
             if sm == em { return "\(start.formatted(.dateTime.month(.abbreviated))) \(sd)–\(ed)" }
             return "\(start.formatted(.dateTime.month(.abbreviated).day())) – \(end.formatted(.dateTime.month(.abbreviated).day()))"
         } else {
             guard let base = cal.dateInterval(of: .month, for: .now)?.start,
-                  let date = cal.date(byAdding: .month, value: monthOffset, to: base) else { return "" }
+                  let date = cal.date(byAdding: .month, value: offset, to: base) else { return "" }
             return date.formatted(.dateTime.month(.wide).year())
         }
     }
 
+    private func incomeFor(day: Date, passive: Int, active: Int) -> Double {
+        guard store.settings.incomeTrackingEnabled,
+              let rate = OnCallBilling.rate(on: day, settings: store.settings) else { return 0 }
+        return Double(passive) / 60.0 * rate * store.settings.passiveMultiplier
+             + Double(active)  / 60.0 * rate * store.settings.activeMultiplier
+    }
+
     private func formatMins(_ m: Int) -> String {
         let h = m / 60, min = m % 60
-        if h > 0 { return "\(h)h\(min > 0 ? " \(min)m" : "")" }
-        return "\(min)m"
+        return h > 0 ? "\(h)h\(min > 0 ? " \(min)m" : "")" : "\(min)m"
     }
 }

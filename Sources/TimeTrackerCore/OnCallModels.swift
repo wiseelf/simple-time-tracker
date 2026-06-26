@@ -61,19 +61,28 @@ public struct OnCallSettings: Codable {
     public var nonBillableRules: [NonBillableRule]
     public var rateHistory: [RateEntry]   // sorted by effectiveFrom ascending
     public var currencySymbol: String      // default "$"
+    public var weekStartsOnMonday: Bool    // default false (Sunday-first)
+
+    public var orderedWeekdays: [(Int, String)] {
+        weekStartsOnMonday
+            ? [(2,"M"),(3,"Tu"),(4,"W"),(5,"Th"),(6,"F"),(7,"Sa"),(1,"Su")]
+            : [(1,"Su"),(2,"M"),(3,"Tu"),(4,"W"),(5,"Th"),(6,"F"),(7,"Sa")]
+    }
 
     public init(incomeTrackingEnabled: Bool = false,
                 passiveMultiplier: Double = 0.4,
                 activeMultiplier: Double = 1.0,
                 nonBillableRules: [NonBillableRule] = [],
                 rateHistory: [RateEntry] = [],
-                currencySymbol: String = "$") {
+                currencySymbol: String = "$",
+                weekStartsOnMonday: Bool = false) {
         self.incomeTrackingEnabled = incomeTrackingEnabled
         self.passiveMultiplier = passiveMultiplier
         self.activeMultiplier = activeMultiplier
         self.nonBillableRules = nonBillableRules
         self.rateHistory = rateHistory
         self.currencySymbol = currencySymbol
+        self.weekStartsOnMonday = weekStartsOnMonday
     }
 
     public init(from decoder: Decoder) throws {
@@ -84,5 +93,6 @@ public struct OnCallSettings: Codable {
         nonBillableRules      = try c.decode([NonBillableRule].self, forKey: .nonBillableRules)
         rateHistory           = try c.decode([RateEntry].self, forKey: .rateHistory)
         currencySymbol        = try c.decodeIfPresent(String.self, forKey: .currencySymbol) ?? "$"
+        weekStartsOnMonday    = try c.decodeIfPresent(Bool.self, forKey: .weekStartsOnMonday) ?? false
     }
 }

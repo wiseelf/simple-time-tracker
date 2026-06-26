@@ -15,6 +15,7 @@ A lightweight native macOS menu bar app for tracking time. No Dock icon, no back
 - **Persistent sessions** — time is saved automatically; today's total is restored on relaunch
 - **Statistics** — bar chart per day (week view) or per calendar week (month view), with period total and daily average; on-call active sessions shown as orange overlay; optional income footer
 - **On-call billing** — define rotation blocks with per-day-of-week schedules; global non-billable window; passive on-call derived automatically; click "On-call" while running to split into an active on-call segment; configurable passive/active rate multipliers; optional income tracking with rate history
+- **Recurrence rules** — define a recurring on-call rotation (every N days or specific days of the week) with a default time window; the app pre-fills a month calendar grid with on-call days; tap any day to skip it, add an exception, or override its hours; all exception edits persist and feed directly into billing summaries
 - **Export / Import** — back up all sessions to a JSON file and restore (merge or replace) on any machine
 - **System notifications** — notified when the timer starts, stops, or is auto-stopped
 - **Right-click menu** — right-click the menu bar icon to access About and Quit without opening the main panel
@@ -57,6 +58,7 @@ simple-time-tracker/
 │   │   ├── TimeSession.swift            # Codable session model (+ isOnCallActive)
 │   │   ├── Extensions.swift             # String.trimmedOrNil
 │   │   ├── OnCallModels.swift           # OnCallRotationBlock, DaySchedule, OnCallSettings, …
+│   │   ├── RecurrenceModels.swift       # RecurrenceRule, ScheduleException, day-generation logic
 │   │   └── OnCallBilling.swift          # Billable/passive/active minute computation + rate lookup
 │   └── TimeTracker/                     # macOS app executable
 │       ├── CoreImport.swift             # @_exported import TimeTrackerCore
@@ -65,11 +67,14 @@ simple-time-tracker/
 │       ├── ContentView.swift            # Main SwiftUI view (Timer / Add / Stats / On-call tabs)
 │       ├── AddView.swift                # Manual time entry (duration and range modes)
 │       ├── StatsView.swift              # Bar-chart statistics with on-call markers + income footer
-│       ├── OnCallView.swift             # On-call tab assembly
+│       ├── OnCallView.swift             # On-call tab assembly (Week / Month / Schedule)
 │       ├── OnCallSettingsSection.swift  # Income toggle, rate history, multipliers, non-billable rules
 │       ├── OnCallRotationListView.swift # Rotation list, add/edit/delete, RotationEditSheet
 │       ├── OnCallSummaryView.swift      # Week/month passive/active/income summary
-│       ├── OnCallStore.swift            # Persistence for rotations + settings (ObservableObject singleton)
+│       ├── OnCallStore.swift            # Persistence for rotations, settings, rules, exceptions
+│       ├── RuleEditSheet.swift          # Create/edit a RecurrenceRule (day-of-week or interval)
+│       ├── OnCallCalendarGrid.swift     # Compact month calendar showing on-call days
+│       ├── ScheduleTab.swift            # Schedule tab: rule row + calendar grid + day detail panel
 │       ├── SessionsListView.swift       # Per-day session list with inline edit/delete
 │       ├── SessionDetailView.swift      # Floating detail panel shown alongside the main panel
 │       ├── SessionDetailState.swift     # ObservableObject shared between AppDelegate and SessionDetailView
@@ -81,7 +86,9 @@ simple-time-tracker/
 │       ├── SessionStore.swift           # Persistence layer (ObservableObject singleton)
 │       └── Assets.xcassets/            # App icon asset catalog
 └── Tests/TimeTrackerTests/
-    └── OnCallBillingTests.swift         # 21 Swift Testing tests for billing logic
+    ├── OnCallBillingTests.swift         # Swift Testing tests for core billing logic
+    ├── RecurrenceRuleTests.swift        # Tests for RecurrenceRule day-generation and exceptions
+    └── RecurrenceBillingTests.swift     # Tests for billing with recurrence rules
 ```
 
 ## Architecture
@@ -158,11 +165,12 @@ public struct TimeSession: Codable, Identifiable {
 
 ### `ContentView`
 
-Three-tab layout (Timer / Add / Stats) using a `.segmented` `Picker`.
+Four-tab layout (Timer / Add / Stats / On-call) using a `.segmented` `Picker`.
 
 - **Timer tab** — large monospaced countdown display, Start/Stop button (`Space` shortcut). While the timer is running a `NoteButton` appears below the button, bound to `TimerManager.pendingNote`.
 - **Add tab** — delegates to `AddView` for all manual time entry.
 - **Stats tab** — delegates to `StatsView`.
+- **On-call tab** — delegates to `OnCallView`.
 
 ### `AddView`
 
@@ -172,6 +180,46 @@ Manual time entry with two modes (segmented picker):
 - *Range mode* — pick a **Day** (any past date), **From**, and **To** using a `DatePicker` and `TimePickerField`; a `DayTimelineView` shows existing sessions and the selected range (blue = valid, red = conflict). A `NoteButton` is shown above the Add button.
 
 After a successful add the view stays on the Add tab.
+
+### `OnCallView`
+
+Three-tab layout (Week / Month / Schedule) using a `.segmented` `Picker`. Owns independent `weekOffset` and `monthOffset` state so each tab keeps its own navigation position.
+
+- **Week / Month tabs** — delegate to `OnCallSummaryView`, passing the period and offset binding. The summary view shows `OnCallRotationListView` (manually-defined rotation blocks) plus a passive/active/income table for the period. Billing calls pass `store.rules` and `store.exceptions` so rule-generated days appear in the totals.
+- **Schedule tab** — delegates to `ScheduleTab`.
+
+### `ScheduleTab`
+
+Manages the recurrence rule workflow:
+
+- **Rule row** — shows the active `RecurrenceRule` (kind label + time window) with edit/delete buttons. A `+` button appears when no rule exists; tapping opens `RuleEditSheet`.
+- **Calendar grid** — `OnCallCalendarGrid` renders the current month; on-call days (as resolved from the rule + exceptions) are highlighted. A month navigation header lets the user browse past/future months.
+- **Day detail panel** — tapping a calendar day opens an inline panel showing the date, an on-call toggle, and (when on-call) hour pickers for start/end. Changes are stored as `ScheduleException`s. A "Reset to rule defaults" link removes the exception for that day.
+
+### `RecurrenceRule` + `ScheduleException` (in `TimeTrackerCore`)
+
+```swift
+public enum RecurrenceRuleKind: Codable, Equatable {
+    case dayOfWeek(daysOfWeek: [Int])                       // 1=Sun … 7=Sat
+    case intervalDuration(intervalDays: Int, durationDays: Int)
+}
+
+public struct RecurrenceRule: Codable, Identifiable {
+    public var kind: RecurrenceRuleKind
+    public var anchorDate: Date
+    public var endDate: Date?        // nil = no end
+    public var startMinute: Int      // minutes from midnight
+    public var endMinute: Int
+    public func window(on:) -> (Int, Int)?
+    public func resolvedWindow(on:exceptions:) -> (Int, Int)?
+}
+
+public struct ScheduleException: Codable, Identifiable {
+    public var date: Date
+    public enum ExceptionKind: Codable { case skip; case override(startMinute:endMinute:) }
+    public var kind: ExceptionKind
+}
+```
 
 ### `StatsView`
 

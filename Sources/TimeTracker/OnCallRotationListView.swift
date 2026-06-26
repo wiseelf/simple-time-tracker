@@ -192,7 +192,8 @@ struct ScheduleRowEditor: View {
     @Binding var schedule: DaySchedule
     var onDelete: () -> Void
 
-    private let allDays = [(1, "Su"), (2, "M"), (3, "T"), (4, "W"), (5, "Th"), (6, "F"), (7, "Sa")]
+    @ObservedObject private var store = OnCallStore.shared
+    private var allDays: [(Int, String)] { store.settings.orderedWeekdays }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
