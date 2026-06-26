@@ -187,7 +187,7 @@ class TimerManager: ObservableObject {
     }
 
     /// Finds the latest free slot today and places a session of the given duration there.
-    func addTime(hours: Int, minutes: Int, note: String? = nil) throws {
+    func addTime(hours: Int, minutes: Int, note: String? = nil, isOnCallActive: Bool = false) throws {
         let seconds = hours * 3600 + minutes * 60
         guard seconds > 0 else { return }
         guard let slotStart = SessionStore.shared.findFreeSlot(duration: seconds, before: Date()) else {
@@ -196,11 +196,12 @@ class TimerManager: ObservableObject {
         elapsedSeconds += seconds
         accumulatedSeconds += seconds
         savedSeconds += seconds
-        SessionStore.shared.record(TimeSession(startDate: slotStart, duration: seconds, isManual: true, note: note))
+        SessionStore.shared.record(TimeSession(startDate: slotStart, duration: seconds,
+                                               isManual: true, note: note, isOnCallActive: isOnCallActive))
     }
 
     /// Records an explicit time range; validates no overlap and that the range is not in the future.
-    func addTimeRange(start: Date, end: Date, note: String? = nil) throws {
+    func addTimeRange(start: Date, end: Date, note: String? = nil, isOnCallActive: Bool = false) throws {
         let cal = Calendar.current
         guard cal.isDate(start, inSameDayAs: end) else { throw ManualEntryError.invalidRange }
         guard start < end else { throw ManualEntryError.invalidRange }
@@ -208,7 +209,8 @@ class TimerManager: ObservableObject {
         guard !SessionStore.shared.hasOverlap(start: start, end: end) else { throw ManualEntryError.overlap }
 
         let duration = Int(end.timeIntervalSince(start))
-        SessionStore.shared.record(TimeSession(startDate: start, duration: duration, isManual: true, note: note))
+        SessionStore.shared.record(TimeSession(startDate: start, duration: duration,
+                                               isManual: true, note: note, isOnCallActive: isOnCallActive))
         // Only update the live timer counters when adding to today
         if cal.isDateInToday(start) {
             elapsedSeconds += duration

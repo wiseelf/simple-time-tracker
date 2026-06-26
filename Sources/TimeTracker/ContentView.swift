@@ -10,6 +10,7 @@ private struct ContentHeightKey: PreferenceKey {
 
 struct ContentView: View {
     @EnvironmentObject var manager: TimerManager
+    @ObservedObject private var appUIState = AppUIState.shared
 
     var onResize: ((CGFloat) -> Void)?
 
@@ -21,17 +22,21 @@ struct ContentView: View {
         VStack(spacing: 0) {
             headerSection
             Divider()
-            tabPicker
-            Divider()
-            switch activeTab {
-            case .timer:
-                timerSection
-            case .add:
-                AddView()
-            case .stats:
-                StatsView()
-            case .onCall:
-                OnCallView()
+            if appUIState.showSettings {
+                SettingsView()
+            } else {
+                tabPicker
+                Divider()
+                switch activeTab {
+                case .timer:
+                    timerSection
+                case .add:
+                    AddView()
+                case .stats:
+                    StatsView()
+                case .onCall:
+                    OnCallView()
+                }
             }
             Divider()
             footerSection
@@ -47,6 +52,9 @@ struct ContentView: View {
             if tab != .stats && tab != .onCall {
                 (NSApp.delegate as? AppDelegate)?.closeSessionsDetail()
             }
+        }
+        .onChange(of: appUIState.showSettings) { showing in
+            if showing { (NSApp.delegate as? AppDelegate)?.closeSessionsDetail() }
         }
     }
 
@@ -71,7 +79,7 @@ struct ContentView: View {
             Text("Time Tracker")
                 .font(.headline)
             Spacer()
-            if activeTab == .timer && manager.elapsedSeconds > 0 && !manager.isRunning {
+            if activeTab == .timer && manager.elapsedSeconds > 0 && !manager.isRunning && !appUIState.showSettings {
                 Button("Reset") {
                     manager.reset()
                 }
@@ -79,6 +87,13 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.red.opacity(0.8))
             }
+            Button {
+                appUIState.showSettings.toggle()
+            } label: {
+                Image(systemName: appUIState.showSettings ? "gearshape.fill" : "gearshape")
+                    .foregroundStyle(appUIState.showSettings ? .primary : .secondary)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

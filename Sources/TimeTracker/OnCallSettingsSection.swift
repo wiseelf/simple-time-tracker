@@ -1,8 +1,7 @@
 import SwiftUI
 
-struct OnCallSettingsSection: View {
-    @ObservedObject var store: OnCallStore
-    @State private var isExpanded = false
+struct SettingsView: View {
+    @ObservedObject private var store = OnCallStore.shared
     @State private var newRate: String = ""
     @State private var newRateDate: Date = .now
     @State private var newNBDays: Set<Int> = []
@@ -10,89 +9,47 @@ struct OnCallSettingsSection: View {
     @State private var newNBEnd: Int = 1080
 
     var body: some View {
-        DisclosureGroup("Settings", isExpanded: $isExpanded) {
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("Income tracking", isOn: Binding(
-                    get: { store.settings.incomeTrackingEnabled },
-                    set: { store.updateSettings(store.settings.with(incomeTrackingEnabled: $0)) }
-                ))
-                .toggleStyle(.switch)
-                .font(.system(size: 12))
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Income tracking", isOn: Binding(
+                get: { store.settings.incomeTrackingEnabled },
+                set: { store.updateSettings(store.settings.with(incomeTrackingEnabled: $0)) }
+            ))
+            .toggleStyle(.switch)
+            .font(.system(size: 12))
 
-                if store.settings.incomeTrackingEnabled {
-                    HStack {
-                        Text("Currency").font(.system(size: 11))
-                        Spacer()
-                        TextField("$", text: Binding(
-                            get: { store.settings.currencySymbol },
-                            set: { store.updateSettings(store.settings.with(currencySymbol: $0)) }
-                        ))
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 44)
-                        .font(.system(size: 11))
-                        .multilineTextAlignment(.center)
-                    }
+            if store.settings.incomeTrackingEnabled {
+                HStack {
+                    Text("Currency").font(.system(size: 11))
+                    Spacer()
+                    TextField("$", text: Binding(
+                        get: { store.settings.currencySymbol },
+                        set: { store.updateSettings(store.settings.with(currencySymbol: $0)) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 44)
+                    .font(.system(size: 11))
+                    .multilineTextAlignment(.center)
+                }
 
-                    multiplierRow(label: "Passive", value: store.settings.passiveMultiplier) { v in
-                        store.updateSettings(store.settings.with(passiveMultiplier: v))
-                    }
-                    multiplierRow(label: "Active", value: store.settings.activeMultiplier) { v in
-                        store.updateSettings(store.settings.with(activeMultiplier: v))
-                    }
-
-                    Divider()
-                    Text("Base rate history").font(.system(size: 11)).foregroundStyle(.secondary)
-                    ForEach(store.settings.rateHistory.sorted { $0.effectiveFrom > $1.effectiveFrom }) { entry in
-                        HStack {
-                            Text(entry.effectiveFrom.formatted(.dateTime.month(.abbreviated).day().year()))
-                                .font(.system(size: 11))
-                            Spacer()
-                            Text(String(format: "%@%.2f /hr", store.settings.currencySymbol, entry.rate))
-                                .font(.system(size: 11, design: .monospaced))
-                            Button {
-                                var s = store.settings
-                                s.rateHistory.removeAll { $0.id == entry.id }
-                                store.updateSettings(s)
-                            } label: {
-                                Image(systemName: "minus.circle").foregroundStyle(.red)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    HStack(spacing: 6) {
-                        DatePicker("", selection: $newRateDate, displayedComponents: .date)
-                            .labelsHidden()
-                            .frame(width: 90)
-                        TextField("Rate", text: $newRate)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 60)
-                            .font(.system(size: 11))
-                        Button("Add") {
-                            guard let r = Double(newRate), r > 0 else { return }
-                            var s = store.settings
-                            s.rateHistory.append(RateEntry(effectiveFrom: newRateDate, rate: r))
-                            s.rateHistory.sort { $0.effectiveFrom < $1.effectiveFrom }
-                            store.updateSettings(s)
-                            newRate = ""
-                        }
-                        .font(.system(size: 11))
-                        .disabled(Double(newRate) == nil)
-                    }
+                multiplierRow(label: "Passive", value: store.settings.passiveMultiplier) { v in
+                    store.updateSettings(store.settings.with(passiveMultiplier: v))
+                }
+                multiplierRow(label: "Active", value: store.settings.activeMultiplier) { v in
+                    store.updateSettings(store.settings.with(activeMultiplier: v))
                 }
 
                 Divider()
-                Text("Non-billable window").font(.system(size: 11)).foregroundStyle(.secondary)
-                ForEach(store.settings.nonBillableRules) { rule in
+                Text("Base rate history").font(.system(size: 11)).foregroundStyle(.secondary)
+                ForEach(store.settings.rateHistory.sorted { $0.effectiveFrom > $1.effectiveFrom }) { entry in
                     HStack {
-                        Text(dayNames(rule.daysOfWeek))
+                        Text(entry.effectiveFrom.formatted(.dateTime.month(.abbreviated).day().year()))
                             .font(.system(size: 11))
                         Spacer()
-                        Text("\(minuteLabel(rule.startMinute))–\(minuteLabel(rule.endMinute))")
+                        Text(String(format: "%@%.2f /hr", store.settings.currencySymbol, entry.rate))
                             .font(.system(size: 11, design: .monospaced))
                         Button {
                             var s = store.settings
-                            s.nonBillableRules.removeAll { $0.id == rule.id }
+                            s.rateHistory.removeAll { $0.id == entry.id }
                             store.updateSettings(s)
                         } label: {
                             Image(systemName: "minus.circle").foregroundStyle(.red)
@@ -100,16 +57,55 @@ struct OnCallSettingsSection: View {
                         .buttonStyle(.plain)
                     }
                 }
-                AddNonBillableRuleRow { rule in
-                    var s = store.settings
-                    s.nonBillableRules.append(rule)
-                    store.updateSettings(s)
+
+                HStack(spacing: 6) {
+                    DatePicker("", selection: $newRateDate, displayedComponents: .date)
+                        .labelsHidden()
+                        .frame(width: 90)
+                    TextField("Rate", text: $newRate)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 60)
+                        .font(.system(size: 11))
+                    Button("Add") {
+                        guard let r = Double(newRate), r > 0 else { return }
+                        var s = store.settings
+                        s.rateHistory.append(RateEntry(effectiveFrom: newRateDate, rate: r))
+                        s.rateHistory.sort { $0.effectiveFrom < $1.effectiveFrom }
+                        store.updateSettings(s)
+                        newRate = ""
+                    }
+                    .font(.system(size: 11))
+                    .disabled(Double(newRate) == nil)
                 }
             }
-            .padding(.top, 6)
+
+            Divider()
+            Text("Non-billable window").font(.system(size: 11)).foregroundStyle(.secondary)
+            ForEach(store.settings.nonBillableRules) { rule in
+                HStack {
+                    Text(dayNames(rule.daysOfWeek))
+                        .font(.system(size: 11))
+                    Spacer()
+                    Text("\(minuteLabel(rule.startMinute))–\(minuteLabel(rule.endMinute))")
+                        .font(.system(size: 11, design: .monospaced))
+                    Button {
+                        var s = store.settings
+                        s.nonBillableRules.removeAll { $0.id == rule.id }
+                        store.updateSettings(s)
+                    } label: {
+                        Image(systemName: "minus.circle").foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            AddNonBillableRuleRow { rule in
+                var s = store.settings
+                s.nonBillableRules.append(rule)
+                store.updateSettings(s)
+            }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .font(.system(size: 12))
     }
 

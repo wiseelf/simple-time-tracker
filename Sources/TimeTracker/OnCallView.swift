@@ -6,8 +6,6 @@ struct OnCallView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            OnCallSettingsSection(store: store)
-            Divider()
             OnCallRotationListView(store: store)
             OnCallSummaryView(store: store, sessionStore: sessionStore)
         }
