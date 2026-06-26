@@ -4,12 +4,22 @@ struct SettingsView: View {
     @ObservedObject private var store = OnCallStore.shared
     @State private var newRate: String = ""
     @State private var newRateDate: Date = .now
-    @State private var newNBDays: Set<Int> = []
-    @State private var newNBStart: Int = 480
-    @State private var newNBEnd: Int = 1080
+    @State private var editingRateId: UUID? = nil
+    @State private var editingRateDate: Date = .now
+    @State private var editingRateText: String = ""
+    @State private var showingAddNB = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Toggle("Week starts on Monday", isOn: Binding(
+                get: { store.settings.weekStartsOnMonday },
+                set: { v in var s = store.settings; s.weekStartsOnMonday = v; store.updateSettings(s) }
+            ))
+            .toggleStyle(.switch)
+            .font(.system(size: 12))
+
+            Divider()
+
             Toggle("Income tracking", isOn: Binding(
                 get: { store.settings.incomeTrackingEnabled },
                 set: { store.updateSettings(store.settings.with(incomeTrackingEnabled: $0)) }
@@ -31,30 +41,64 @@ struct SettingsView: View {
                     .multilineTextAlignment(.center)
                 }
 
-                multiplierRow(label: "Passive", value: store.settings.passiveMultiplier) { v in
+                MultiplierField(label: "Passive", value: store.settings.passiveMultiplier) { v in
                     store.updateSettings(store.settings.with(passiveMultiplier: v))
                 }
-                multiplierRow(label: "Active", value: store.settings.activeMultiplier) { v in
+                MultiplierField(label: "Active", value: store.settings.activeMultiplier) { v in
                     store.updateSettings(store.settings.with(activeMultiplier: v))
                 }
 
                 Divider()
                 Text("Base rate history").font(.system(size: 11)).foregroundStyle(.secondary)
                 ForEach(store.settings.rateHistory.sorted { $0.effectiveFrom > $1.effectiveFrom }) { entry in
-                    HStack {
-                        Text(entry.effectiveFrom.formatted(.dateTime.month(.abbreviated).day().year()))
+                    if editingRateId == entry.id {
+                        HStack(spacing: 6) {
+                            DatePicker("", selection: $editingRateDate, displayedComponents: .date)
+                                .labelsHidden().frame(width: 90)
+                            TextField("Rate", text: $editingRateText)
+                                .textFieldStyle(.roundedBorder).frame(width: 60).font(.system(size: 11))
+                            Button("Save") {
+                                guard let r = Double(editingRateText), r > 0 else { return }
+                                var s = store.settings
+                                if let idx = s.rateHistory.firstIndex(where: { $0.id == entry.id }) {
+                                    s.rateHistory[idx] = RateEntry(id: entry.id,
+                                                                    effectiveFrom: editingRateDate, rate: r)
+                                    s.rateHistory.sort { $0.effectiveFrom < $1.effectiveFrom }
+                                }
+                                store.updateSettings(s)
+                                editingRateId = nil
+                            }
                             .font(.system(size: 11))
-                        Spacer()
-                        Text(String(format: "%@%.2f /hr", store.settings.currencySymbol, entry.rate))
-                            .font(.system(size: 11, design: .monospaced))
-                        Button {
-                            var s = store.settings
-                            s.rateHistory.removeAll { $0.id == entry.id }
-                            store.updateSettings(s)
-                        } label: {
-                            Image(systemName: "minus.circle").foregroundStyle(.red)
+                            .disabled(Double(editingRateText) == nil)
+                            Button { editingRateId = nil } label: {
+                                Image(systemName: "xmark").font(.system(size: 10))
+                            }
+                            .buttonStyle(.plain).foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
+                    } else {
+                        HStack {
+                            Text(entry.effectiveFrom.formatted(.dateTime.month(.abbreviated).day().year()))
+                                .font(.system(size: 11))
+                            Spacer()
+                            Text(String(format: "%@%.2f /hr", store.settings.currencySymbol, entry.rate))
+                                .font(.system(size: 11, design: .monospaced))
+                            Button {
+                                editingRateDate = entry.effectiveFrom
+                                editingRateText = String(format: "%.2f", entry.rate)
+                                editingRateId   = entry.id
+                            } label: {
+                                Image(systemName: "pencil").font(.system(size: 11))
+                            }
+                            .buttonStyle(.plain).foregroundStyle(.secondary)
+                            Button {
+                                var s = store.settings
+                                s.rateHistory.removeAll { $0.id == entry.id }
+                                store.updateSettings(s)
+                            } label: {
+                                Image(systemName: "minus.circle").foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
 
@@ -80,7 +124,18 @@ struct SettingsView: View {
             }
 
             Divider()
-            Text("Non-billable window").font(.system(size: 11)).foregroundStyle(.secondary)
+            HStack {
+                Text("Non-billable window").font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    showingAddNB.toggle()
+                } label: {
+                    Image(systemName: showingAddNB ? "xmark.circle" : "plus.circle")
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(showingAddNB ? .secondary : .accentColor)
+            }
             ForEach(store.settings.nonBillableRules) { rule in
                 HStack {
                     Text(dayNames(rule.daysOfWeek))
@@ -98,29 +153,18 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                 }
             }
-            AddNonBillableRuleRow { rule in
-                var s = store.settings
-                s.nonBillableRules.append(rule)
-                store.updateSettings(s)
+            if showingAddNB {
+                AddNonBillableRuleRow { rule in
+                    var s = store.settings
+                    s.nonBillableRules.append(rule)
+                    store.updateSettings(s)
+                    showingAddNB = false
+                }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .font(.system(size: 12))
-    }
-
-    private func multiplierRow(label: String, value: Double, onChange: @escaping (Double) -> Void) -> some View {
-        HStack {
-            Text("\(label) rate").font(.system(size: 11))
-            Spacer()
-            Stepper(value: Binding(get: { value }, set: onChange),
-                    in: 0.0...2.0, step: 0.05) {
-                Text(String(format: "%.0f%%", value * 100))
-                    .font(.system(size: 11, design: .monospaced))
-                    .frame(width: 38, alignment: .trailing)
-            }
-            .controlSize(.small)
-        }
     }
 
     private func dayNames(_ days: [Int]) -> String {
@@ -133,6 +177,55 @@ struct SettingsView: View {
     }
 }
 
+private struct MultiplierField: View {
+    let label: String
+    let value: Double
+    let onChange: (Double) -> Void
+
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack {
+            Text("\(label) rate").font(.system(size: 11))
+            Spacer()
+            HStack(spacing: 2) {
+                TextField("", text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 48)
+                    .font(.system(size: 11, design: .monospaced))
+                    .multilineTextAlignment(.trailing)
+                    .focused($focused)
+                    .onSubmit { commit() }
+                    .onChange(of: focused) { isFocused in
+                        if !isFocused { commit() }
+                    }
+                Text("%").font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+        }
+        .onAppear { text = fmt(value) }
+        .onChange(of: value) { newValue in
+            if !focused { text = fmt(newValue) }
+        }
+    }
+
+    private func fmt(_ v: Double) -> String {
+        let pct = v * 100
+        return pct.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(pct))
+            : String(format: "%.1f", pct)
+    }
+
+    private func commit() {
+        guard let pct = Double(text), pct >= 0, pct <= 200 else {
+            text = fmt(value)
+            return
+        }
+        onChange(pct / 100.0)
+        text = fmt(pct / 100.0)
+    }
+}
+
 struct AddNonBillableRuleRow: View {
     var onAdd: (NonBillableRule) -> Void
 
@@ -140,7 +233,8 @@ struct AddNonBillableRuleRow: View {
     @State private var startMinute: Int = 480
     @State private var endMinute: Int = 1080
 
-    private let dayLabels = [(2, "M"), (3, "T"), (4, "W"), (5, "T"), (6, "F"), (7, "S"), (1, "Su")]
+    @ObservedObject private var store = OnCallStore.shared
+    private var dayLabels: [(Int, String)] { store.settings.orderedWeekdays }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -191,7 +285,8 @@ private extension OnCallSettings {
                        activeMultiplier: activeMultiplier,
                        nonBillableRules: nonBillableRules,
                        rateHistory: rateHistory,
-                       currencySymbol: currencySymbol)
+                       currencySymbol: currencySymbol,
+                       weekStartsOnMonday: weekStartsOnMonday)
     }
     func with(passiveMultiplier: Double) -> OnCallSettings {
         OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
@@ -199,7 +294,8 @@ private extension OnCallSettings {
                        activeMultiplier: activeMultiplier,
                        nonBillableRules: nonBillableRules,
                        rateHistory: rateHistory,
-                       currencySymbol: currencySymbol)
+                       currencySymbol: currencySymbol,
+                       weekStartsOnMonday: weekStartsOnMonday)
     }
     func with(activeMultiplier: Double) -> OnCallSettings {
         OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
@@ -207,7 +303,8 @@ private extension OnCallSettings {
                        activeMultiplier: activeMultiplier,
                        nonBillableRules: nonBillableRules,
                        rateHistory: rateHistory,
-                       currencySymbol: currencySymbol)
+                       currencySymbol: currencySymbol,
+                       weekStartsOnMonday: weekStartsOnMonday)
     }
     func with(currencySymbol: String) -> OnCallSettings {
         OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
@@ -215,6 +312,7 @@ private extension OnCallSettings {
                        activeMultiplier: activeMultiplier,
                        nonBillableRules: nonBillableRules,
                        rateHistory: rateHistory,
-                       currencySymbol: currencySymbol)
+                       currencySymbol: currencySymbol,
+                       weekStartsOnMonday: weekStartsOnMonday)
     }
 }
