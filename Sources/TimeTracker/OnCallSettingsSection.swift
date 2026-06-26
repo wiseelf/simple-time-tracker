@@ -148,7 +148,9 @@ struct AddNonBillableRuleRow: View {
                 ForEach(dayLabels, id: \.0) { (num, label) in
                     let selected = days.contains(num)
                     Button(label) {
-                        if selected { days.remove(num) } else { days.insert(num) }
+                        var d = days
+                        if selected { d.remove(num) } else { d.insert(num) }
+                        days = d
                     }
                     .buttonStyle(.bordered)
                     .tint(selected ? .blue : .secondary)

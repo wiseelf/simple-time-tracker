@@ -16,6 +16,7 @@ let package = Package(
             name: "TimeTracker",
             dependencies: ["TimeTrackerCore"],
             path: "Sources/TimeTracker",
+            exclude: ["TimeTracker.entitlements"],
             resources: [.process("Assets.xcassets")]
         ),
         .testTarget(
