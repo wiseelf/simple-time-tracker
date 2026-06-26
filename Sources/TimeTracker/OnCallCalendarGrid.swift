@@ -1,12 +1,17 @@
 import SwiftUI
 
 struct OnCallCalendarGrid: View {
-    let monthOffset: Int
-    let rule:        RecurrenceRule?
-    let exceptions:  [ScheduleException]
+    let monthOffset:        Int
+    let rule:               RecurrenceRule?
+    let exceptions:         [ScheduleException]
+    let weekStartsOnMonday: Bool
     @Binding var selectedDate: Date?
 
-    private let weekdayHeaders = ["Su","M","Tu","W","Th","F","Sa"]
+    private var weekdayHeaders: [String] {
+        weekStartsOnMonday
+            ? ["M","Tu","W","Th","F","Sa","Su"]
+            : ["Su","M","Tu","W","Th","F","Sa"]
+    }
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
 
     var body: some View {
@@ -40,7 +45,8 @@ struct OnCallCalendarGrid: View {
               let monthEnd   = cal.date(byAdding: .month, value: 1, to: monthStart)
         else { return [] }
 
-        let leadingPad = cal.component(.weekday, from: monthStart) - 1
+        let weekday = cal.component(.weekday, from: monthStart)
+        let leadingPad = weekStartsOnMonday ? (weekday - 2 + 7) % 7 : weekday - 1
         var result: [CalendarCell] = []
 
         if leadingPad > 0 {
@@ -102,6 +108,7 @@ struct DayCell: View {
                 .foregroundStyle(fg)
         }
         .frame(height: 22)
+        .contentShape(Rectangle())
     }
 
     private var bg: Color {

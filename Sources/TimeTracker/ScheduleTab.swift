@@ -9,18 +9,15 @@ struct ScheduleTab: View {
     @State private var editingRule:    RecurrenceRule? = nil
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                rulesSection
+        VStack(spacing: 0) {
+            rulesSection
+            Divider()
+            calendarSection
+            if let date = selectedDate {
                 Divider()
-                calendarSection
-                if let date = selectedDate {
-                    Divider()
-                    DayDetailPanel(store: store, date: date) { selectedDate = nil }
-                }
+                DayDetailPanel(store: store, date: date) { selectedDate = nil }
             }
         }
-        .scrollDisabled(true)
     }
 
     // MARK: - Rules section
@@ -99,10 +96,11 @@ struct ScheduleTab: View {
             .padding(.horizontal, 12).padding(.top, 8)
 
             OnCallCalendarGrid(
-                monthOffset:  monthOffset,
-                rule:         store.rules.first,
-                exceptions:   store.exceptions,
-                selectedDate: $selectedDate
+                monthOffset:        monthOffset,
+                rule:               store.rules.first,
+                exceptions:         store.exceptions,
+                weekStartsOnMonday: store.settings.weekStartsOnMonday,
+                selectedDate:       $selectedDate
             )
             .padding(.horizontal, 8).padding(.bottom, 6)
         }

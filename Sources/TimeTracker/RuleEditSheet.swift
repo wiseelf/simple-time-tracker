@@ -21,7 +21,8 @@ struct RuleEditSheet: View {
     @State private var startMinute:  Int
     @State private var endMinute:    Int
 
-    private let allDays = [(1,"Su"),(2,"M"),(3,"T"),(4,"W"),(5,"Th"),(6,"F"),(7,"Sa")]
+    @ObservedObject private var store = OnCallStore.shared
+    private var allDays: [(Int, String)] { store.settings.orderedWeekdays }
 
     init(rule: RecurrenceRule?, onSave: @escaping (RecurrenceRule) -> Void) {
         self.rule = rule
