@@ -6,6 +6,7 @@ struct StatsView: View {
 
     @ObservedObject private var store = SessionStore.shared
     @ObservedObject private var timerManager = TimerManager.shared
+    @ObservedObject private var onCallStore = OnCallStore.shared
     @State private var period: Period = .week
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
@@ -19,6 +20,10 @@ struct StatsView: View {
             chartSection
             Divider()
             footerSection
+            if onCallStore.settings.incomeTrackingEnabled {
+                Divider()
+                incomeFooterSection
+            }
             Divider()
             backupSection
         }
@@ -76,7 +81,7 @@ struct StatsView: View {
         VStack(spacing: 0) {
             if period == .week {
                 ForEach(weekRows) { row in
-                    barRow(label: row.label, seconds: row.seconds,
+                    barRow(label: row.label, seconds: row.seconds, onCallActiveSeconds: row.onCallActiveSeconds,
                            maxSeconds: maxWeekSeconds, highlight: row.isToday, labelWidth: 30)
                         .onTapGesture {
                             guard row.seconds > 0 else { return }
@@ -91,7 +96,7 @@ struct StatsView: View {
                 }
             } else {
                 ForEach(monthWeekRows) { row in
-                    barRow(label: row.label, seconds: row.seconds,
+                    barRow(label: row.label, seconds: row.seconds, onCallActiveSeconds: row.onCallActiveSeconds,
                            maxSeconds: maxMonthSeconds, highlight: false, labelWidth: 38)
                         .onTapGesture {
                             guard row.seconds > 0 else { return }
@@ -112,7 +117,7 @@ struct StatsView: View {
         .padding(.vertical, 6)
     }
 
-    private func barRow(label: String, seconds: Int, maxSeconds: Int,
+    private func barRow(label: String, seconds: Int, onCallActiveSeconds: Int, maxSeconds: Int,
                         highlight: Bool, labelWidth: CGFloat) -> some View {
         HStack(spacing: 8) {
             Text(label)
@@ -128,6 +133,11 @@ struct StatsView: View {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(highlight ? Color.accentColor : Color.accentColor.opacity(0.55))
                             .frame(width: geo.size.width * CGFloat(seconds) / CGFloat(maxSeconds))
+                    }
+                    if onCallActiveSeconds > 0, maxSeconds > 0 {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.orange.opacity(0.8))
+                            .frame(width: geo.size.width * CGFloat(min(onCallActiveSeconds, seconds)) / CGFloat(maxSeconds))
                     }
                 }
             }
@@ -170,6 +180,67 @@ struct StatsView: View {
         .padding(.vertical, 10)
     }
 
+    private var incomeFooterSection: some View {
+        let income = periodIncome
+        return HStack(spacing: 0) {
+            incomeCell(label: "REGULAR", value: income.regular)
+            Spacer()
+            incomeCell(label: "ON-CALL", value: income.onCall)
+            Spacer()
+            incomeCell(label: "TOTAL", value: income.total)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private func incomeCell(label: String, value: Double) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: 9, weight: .medium)).foregroundStyle(.tertiary)
+            Text(value > 0 ? String(format: "%.0f", value) : "—")
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+        }
+    }
+
+    private struct PeriodIncome { var regular: Double = 0; var onCall: Double = 0; var total: Double { regular + onCall } }
+
+    private var periodIncome: PeriodIncome {
+        let settings = onCallStore.settings
+        let rotations = onCallStore.rotations
+        guard settings.incomeTrackingEnabled else { return PeriodIncome() }
+
+        let dates: [Date]
+        let cal = Calendar.current
+        if period == .week {
+            guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
+                  let start = cal.date(byAdding: .weekOfYear, value: weekOffset, to: weekStart)
+            else { return PeriodIncome() }
+            dates = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
+        } else {
+            guard let monthStart = cal.dateInterval(of: .month, for: .now)?.start,
+                  let start = cal.date(byAdding: .month, value: monthOffset, to: monthStart),
+                  let monthEnd = cal.date(byAdding: .month, value: 1, to: start)
+            else { return PeriodIncome() }
+            var d = start, all: [Date] = []
+            while d < monthEnd { all.append(d); d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86400) }
+            dates = all
+        }
+
+        var result = PeriodIncome()
+        for day in dates {
+            guard let rate = OnCallBilling.rate(on: day, settings: settings) else { continue }
+            let sessions = store.sessions(on: day)
+
+            let regularSecs = sessions.filter { !$0.isOnCallActive }.reduce(0) { $0 + $1.duration }
+            result.regular += Double(regularSecs) / 3600.0 * rate
+
+            let passiveMins = OnCallBilling.passiveMinutes(on: day, sessions: sessions, rotations: rotations, settings: settings)
+            let activeMins  = OnCallBilling.activeMinutesWithinBillable(on: day, sessions: sessions, rotations: rotations, settings: settings)
+            result.onCall += (Double(passiveMins) / 60.0 * rate * settings.passiveMultiplier)
+                           + (Double(activeMins) / 60.0 * rate * settings.activeMultiplier)
+        }
+        return result
+    }
+
     // MARK: - Backup
 
     private var backupSection: some View {
@@ -198,10 +269,12 @@ struct StatsView: View {
 
     private struct DayRow: Identifiable {
         let id: Date; let label: String; let seconds: Int; let isToday: Bool
+        let onCallActiveSeconds: Int
     }
 
     private struct WeekRow: Identifiable {
         let id: Date; let label: String; let seconds: Int
+        let onCallActiveSeconds: Int
     }
 
     /// Seconds of the currently running segment that haven't been saved to the store yet.
@@ -218,11 +291,13 @@ struct StatsView: View {
         else { return [] }
         return (0..<7).compactMap { i in
             guard let day = cal.date(byAdding: .day, value: i, to: start) else { return nil }
-            let secs = store.totalSeconds(in: store.sessions(on: day))
+            let daySessions = store.sessions(on: day)
+            let secs = store.totalSeconds(in: daySessions)
                 + (cal.isDateInToday(day) ? liveExtraSeconds : 0)
+            let onCallSecs = daySessions.filter { $0.isOnCallActive }.reduce(0) { $0 + $1.duration }
             let raw = day.formatted(.dateTime.weekday(.abbreviated))
             return DayRow(id: day, label: String(raw.prefix(3)), seconds: secs,
-                          isToday: cal.isDateInToday(day))
+                          isToday: cal.isDateInToday(day), onCallActiveSeconds: onCallSecs)
         }
     }
 
@@ -234,22 +309,23 @@ struct StatsView: View {
         else { return [] }
         var rows: [WeekRow] = []
         var cursor = start
-        var weekNum = 1
         while cursor < monthEnd {
             let next = cal.date(byAdding: .day, value: 7, to: cursor) ?? monthEnd
             let end = min(next, monthEnd)
             var dayCursor = cursor
             var secs = 0
+            var onCallSecs = 0
             while dayCursor < end {
-                secs += store.totalSeconds(in: store.sessions(on: dayCursor))
+                let daySessions = store.sessions(on: dayCursor)
+                secs += store.totalSeconds(in: daySessions)
                 if cal.isDateInToday(dayCursor) { secs += liveExtraSeconds }
+                onCallSecs += daySessions.filter { $0.isOnCallActive }.reduce(0) { $0 + $1.duration }
                 dayCursor = cal.date(byAdding: .day, value: 1, to: dayCursor) ?? dayCursor.addingTimeInterval(86400)
             }
             let sd = cal.component(.day, from: cursor)
             let ed = cal.component(.day, from: end.addingTimeInterval(-1))
-            rows.append(WeekRow(id: cursor, label: "\(sd)–\(ed)", seconds: secs))
+            rows.append(WeekRow(id: cursor, label: "\(sd)–\(ed)", seconds: secs, onCallActiveSeconds: onCallSecs))
             cursor = end
-            weekNum += 1
         }
         return rows
     }

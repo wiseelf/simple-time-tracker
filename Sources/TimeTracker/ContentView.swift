@@ -15,7 +15,7 @@ struct ContentView: View {
 
     @State private var activeTab: Tab = .timer
 
-    enum Tab { case timer, add, stats }
+    enum Tab { case timer, add, stats, onCall }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +30,8 @@ struct ContentView: View {
                 AddView()
             case .stats:
                 StatsView()
+            case .onCall:
+                OnCallView()
             }
             Divider()
             footerSection
@@ -42,7 +44,7 @@ struct ContentView: View {
             DispatchQueue.main.async { onResize?(height) }
         }
         .onChange(of: activeTab) { tab in
-            if tab != .stats {
+            if tab != .stats && tab != .onCall {
                 (NSApp.delegate as? AppDelegate)?.closeSessionsDetail()
             }
         }
@@ -53,6 +55,7 @@ struct ContentView: View {
             Text("Timer").tag(Tab.timer)
             Text("Add").tag(Tab.add)
             Text("Stats").tag(Tab.stats)
+            Text("On-call").tag(Tab.onCall)
         }
         .pickerStyle(.segmented)
         .padding(.horizontal, 16)
@@ -81,6 +84,12 @@ struct ContentView: View {
         .padding(.vertical, 12)
     }
 
+    private var timerBorderColor: Color {
+        if manager.isRunningOnCall { return .orange }
+        if manager.isRunning { return .green }
+        return .gray.opacity(0.25)
+    }
+
     private var timerSection: some View {
         VStack(spacing: 14) {
             Text(manager.formattedTime)
@@ -93,15 +102,15 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            manager.isRunning ? Color.green : Color.gray.opacity(0.25),
-                            lineWidth: 2
-                        )
+                        .stroke(timerBorderColor, lineWidth: 2)
                         .shadow(
-                            color: manager.isRunning ? Color.green.opacity(0.5) : .clear,
+                            color: manager.isRunning
+                                ? (manager.isRunningOnCall ? Color.orange.opacity(0.5) : Color.green.opacity(0.5))
+                                : .clear,
                             radius: 6
                         )
                         .animation(.easeInOut(duration: 0.3), value: manager.isRunning)
+                        .animation(.easeInOut(duration: 0.3), value: manager.isRunningOnCall)
                 )
 
             Button {
@@ -120,11 +129,28 @@ struct ContentView: View {
             .keyboardShortcut(.space, modifiers: [])
 
             if manager.isRunning {
-                NoteButton(note: $manager.pendingNote)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                HStack(spacing: 10) {
+                    NoteButton(note: $manager.pendingNote)
+                    if !manager.isRunningOnCall {
+                        Button {
+                            manager.startOnCallActive()
+                        } label: {
+                            Label("On-call", systemImage: "phone.fill")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.orange)
+                    } else {
+                        Label("ON-CALL", systemImage: "phone.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .animation(.easeInOut(duration: 0.2), value: manager.isRunning)
+        .animation(.easeInOut(duration: 0.2), value: manager.isRunningOnCall)
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
     }

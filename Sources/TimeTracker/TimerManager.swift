@@ -22,6 +22,7 @@ class TimerManager: ObservableObject {
     static let shared = TimerManager()
 
     @Published var isRunning = false
+    @Published var isRunningOnCall: Bool = false
     @Published var elapsedSeconds: Int = 0
     @Published var pendingNote: String = ""
 
@@ -30,6 +31,7 @@ class TimerManager: ObservableObject {
     private var segmentStartDate: Date?
     private var accumulatedSeconds: Int = 0
     private var savedSeconds: Int = 0
+    private var nextSessionIsOnCall: Bool = false
 
     var formattedTime: String {
         formatted(elapsedSeconds)
@@ -104,6 +106,8 @@ class TimerManager: ObservableObject {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        isRunningOnCall = nextSessionIsOnCall
+        nextSessionIsOnCall = false
         segmentStartDate = Date()
         startDate = Date()
         timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -124,8 +128,14 @@ class TimerManager: ObservableObject {
 
         let delta = elapsedSeconds - savedSeconds
         if delta > 0, let seg = segmentStartDate {
-            SessionStore.shared.record(TimeSession(startDate: seg, duration: delta, note: pendingNote.trimmedOrNil))
+            SessionStore.shared.record(TimeSession(
+                startDate: seg,
+                duration: delta,
+                note: pendingNote.trimmedOrNil,
+                isOnCallActive: isRunningOnCall
+            ))
         }
+        isRunningOnCall = false
         pendingNote = ""
         savedSeconds = elapsedSeconds
         segmentStartDate = nil
@@ -134,6 +144,14 @@ class TimerManager: ObservableObject {
         let todayStr   = formatDuration(elapsedSeconds)
         let prefix     = reason.map { "\($0) — " } ?? ""
         notify(title: "Timer stopped", body: "\(prefix)Session: \(sessionStr) · Today: \(todayStr)")
+    }
+
+    /// Saves the current segment as regular, then immediately starts a new on-call active segment.
+    func startOnCallActive() {
+        guard isRunning, !isRunningOnCall else { return }
+        nextSessionIsOnCall = true
+        stop()
+        start()
     }
 
     // MARK: - Notifications
