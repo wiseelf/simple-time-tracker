@@ -1,6 +1,6 @@
 # Simple Time Tracker
 
-A lightweight native macOS menu bar app for tracking time. No Dock icon, no background monitoring — just a clean timer with manual entry, visual timeline, and daily/weekly/monthly statistics.
+A lightweight native macOS menu bar app for tracking time. No Dock icon, no background monitoring — just a clean timer with manual entry, visual timeline, daily/weekly/monthly statistics, and on-call billing tracking.
 
 ## Features
 
@@ -13,7 +13,8 @@ A lightweight native macOS menu bar app for tracking time. No Dock icon, no back
 - **Auto-stop on sleep / screensaver** — timer stops automatically when the Mac sleeps or the screensaver activates; a system notification is sent
 - **Automatic day reset** — at midnight the timer resets to `00:00:00`; if it was running, the previous day's session is saved and the timer restarts fresh for the new day
 - **Persistent sessions** — time is saved automatically; today's total is restored on relaunch
-- **Statistics** — bar chart per day (week view) or per calendar week (month view), with period total and daily average; navigation labels show date ranges
+- **Statistics** — bar chart per day (week view) or per calendar week (month view), with period total and daily average; on-call active sessions shown as orange overlay; optional income footer
+- **On-call billing** — define rotation blocks with per-day-of-week schedules; global non-billable window; passive on-call derived automatically; click "On-call" while running to split into an active on-call segment; configurable passive/active rate multipliers; optional income tracking with rate history
 - **Export / Import** — back up all sessions to a JSON file and restore (merge or replace) on any machine
 - **System notifications** — notified when the timer starts, stops, or is auto-stopped
 - **Right-click menu** — right-click the menu bar icon to access About and Quit without opening the main panel
@@ -40,7 +41,7 @@ swift build -c release
 # Binary output: .build/release/TimeTracker
 ```
 
-No additional dependencies — the project uses only Apple frameworks (AppKit, SwiftUI, Combine, Foundation, UserNotifications).
+Dependencies: [swift-testing](https://github.com/swiftlang/swift-testing) (test target only). The main app uses only Apple frameworks (AppKit, SwiftUI, Combine, Foundation, UserNotifications).
 
 > **Note:** System notifications require a proper `.app` bundle with a bundle identifier. They are silently skipped when running via `swift run`.
 
@@ -50,25 +51,37 @@ No additional dependencies — the project uses only Apple frameworks (AppKit, S
 simple-time-tracker/
 ├── Package.swift
 ├── scripts/
-│   └── generate_icon.swift         # CoreGraphics script — generates AppIcon PNG assets
-└── Sources/TimeTracker/
-    ├── main.swift                  # Entry point — NSApplication setup
-    ├── AppDelegate.swift           # Status bar item, main panel, detail panel, context menu, About window
-    ├── ContentView.swift           # Main SwiftUI view (Timer / Add / Stats tabs)
-    ├── AddView.swift               # Manual time entry (duration and range modes)
-    ├── StatsView.swift             # Bar-chart statistics view with export/import
-    ├── SessionsListView.swift      # Per-day session list with inline edit/delete
-    ├── SessionDetailView.swift     # Floating detail panel shown alongside the main panel
-    ├── SessionDetailState.swift    # ObservableObject shared between AppDelegate and SessionDetailView
-    ├── AboutView.swift             # About window content
-    ├── DayTimelineView.swift       # 24-hour visual timeline for range entry
-    ├── TimePickerField.swift       # Custom NSViewRepresentable HH:MM time input
-    ├── NoteButton.swift            # Reusable note input button with popover TextEditor
-    ├── TimerManager.swift          # Timer logic (ObservableObject singleton)
-    ├── SessionStore.swift          # Persistence layer (ObservableObject singleton)
-    ├── TimeSession.swift           # Codable model for a single tracked session
-    ├── Extensions.swift            # Shared Swift extensions (String.trimmedOrNil)
-    └── Assets.xcassets/            # App icon asset catalog
+│   └── generate_icon.swift              # CoreGraphics script — generates AppIcon PNG assets
+├── Sources/
+│   ├── TimeTrackerCore/                 # Pure logic library (testable, no AppKit)
+│   │   ├── TimeSession.swift            # Codable session model (+ isOnCallActive)
+│   │   ├── Extensions.swift             # String.trimmedOrNil
+│   │   ├── OnCallModels.swift           # OnCallRotationBlock, DaySchedule, OnCallSettings, …
+│   │   └── OnCallBilling.swift          # Billable/passive/active minute computation + rate lookup
+│   └── TimeTracker/                     # macOS app executable
+│       ├── CoreImport.swift             # @_exported import TimeTrackerCore
+│       ├── main.swift                   # Entry point — NSApplication setup
+│       ├── AppDelegate.swift            # Status bar item, main panel, detail panel, context menu, About window
+│       ├── ContentView.swift            # Main SwiftUI view (Timer / Add / Stats / On-call tabs)
+│       ├── AddView.swift                # Manual time entry (duration and range modes)
+│       ├── StatsView.swift              # Bar-chart statistics with on-call markers + income footer
+│       ├── OnCallView.swift             # On-call tab assembly
+│       ├── OnCallSettingsSection.swift  # Income toggle, rate history, multipliers, non-billable rules
+│       ├── OnCallRotationListView.swift # Rotation list, add/edit/delete, RotationEditSheet
+│       ├── OnCallSummaryView.swift      # Week/month passive/active/income summary
+│       ├── OnCallStore.swift            # Persistence for rotations + settings (ObservableObject singleton)
+│       ├── SessionsListView.swift       # Per-day session list with inline edit/delete
+│       ├── SessionDetailView.swift      # Floating detail panel shown alongside the main panel
+│       ├── SessionDetailState.swift     # ObservableObject shared between AppDelegate and SessionDetailView
+│       ├── AboutView.swift              # About window content
+│       ├── DayTimelineView.swift        # 24-hour visual timeline for range entry
+│       ├── TimePickerField.swift        # Custom NSViewRepresentable HH:MM time input
+│       ├── NoteButton.swift             # Reusable note input button with popover TextEditor
+│       ├── TimerManager.swift           # Timer logic (ObservableObject singleton)
+│       ├── SessionStore.swift           # Persistence layer (ObservableObject singleton)
+│       └── Assets.xcassets/            # App icon asset catalog
+└── Tests/TimeTrackerTests/
+    └── OnCallBillingTests.swift         # 21 Swift Testing tests for billing logic
 ```
 
 ## Architecture
@@ -97,12 +110,14 @@ Owns the `NSStatusItem`, the main `NSPanel` popup, the session detail panel, and
 
 | Method | Description |
 |---|---|
-| `start()` | Starts a `Timer` firing every second, records `segmentStartDate`, sends a start notification |
-| `stop(reason:)` | Invalidates timer, calculates delta since last save, writes a `TimeSession`, sends a stop notification |
+| `start()` | Starts a `Timer` firing every second, records `segmentStartDate`, sends a start notification; reads `nextSessionIsOnCall` to set `isRunningOnCall` |
+| `stop(reason:)` | Invalidates timer, calculates delta since last save, writes a `TimeSession` (with `isOnCallActive: isRunningOnCall`), sends a stop notification |
+| `startOnCallActive()` | While running as regular: saves elapsed as a regular session, then immediately starts a new on-call active segment |
 | `reset()` | Stops and zeroes all counters |
 | `addTime(hours:minutes:note:)` | Finds the latest free slot today and records a manual `TimeSession` (throws `ManualEntryError`) |
 | `addTimeRange(start:end:note:)` | Records a manual `TimeSession` for an explicit time range on any past day; validates same-day, start < end, not in future, no overlap (throws `ManualEntryError`) |
 | `pendingNote` | `String` published property bound to the note field while the timer is running; attached to the session on `stop()` and cleared automatically |
+| `isRunningOnCall` | `Bool` published property — `true` while the current timer segment is tagged as on-call active |
 | `loadTodayTime()` | Called once at launch to seed `elapsedSeconds` with today's saved total and register the midnight day-change observer |
 | `resyncFromStore()` | Resyncs elapsed/accumulated/saved counters from stored sessions without stopping the timer; call after any session edit or delete |
 
@@ -126,19 +141,20 @@ Owns the `NSStatusItem`, the main `NSPanel` popup, the session detail panel, and
 | `importSessions(from:)` | Decodes and merges sessions (deduped by `id`) |
 | `replaceAll(with:)` | Replaces all sessions with the provided array |
 
-### `TimeSession`
+### `TimeSession` (in `TimeTrackerCore`)
 
 ```swift
-struct TimeSession: Codable, Identifiable {
-    let id: UUID
-    let startDate: Date   // ISO-8601 in JSON
-    let duration: Int     // seconds
-    let isManual: Bool    // true for manually entered time
-    var note: String?     // optional free-text annotation
+public struct TimeSession: Codable, Identifiable {
+    public let id: UUID
+    public let startDate: Date    // ISO-8601 in JSON
+    public let duration: Int      // seconds
+    public let isManual: Bool     // true for manually entered time
+    public var note: String?      // optional free-text annotation
+    public var isOnCallActive: Bool  // true for on-call incident sessions
 }
 ```
 
-`note` is optional in JSON so existing session files without the field decode correctly (the property is set to `nil`).
+`note` and `isOnCallActive` are optional in JSON; both default to `nil`/`false` so existing session files decode correctly.
 
 ### `ContentView`
 

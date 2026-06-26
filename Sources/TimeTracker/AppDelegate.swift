@@ -149,11 +149,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "About TimeTracker", action: #selector(openAbout), keyEquivalent: "")
             .target = self
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: "")
+            .target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit TimeTracker", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil  // remove so left-click still uses our action
+    }
+
+    @objc private func openSettings() {
+        AppUIState.shared.showSettings = true
+        openPanel()
     }
 
     @objc private func openAbout() {

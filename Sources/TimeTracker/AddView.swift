@@ -12,6 +12,7 @@ struct AddView: View {
     @State private var rangeDay: Date = Calendar.current.startOfDay(for: Date())
     @State private var rangeStart: Date = Date().addingTimeInterval(-3600)
     @State private var rangeEnd: Date = Date()
+    @State private var isOnCallActive = false
     @State private var entryError: String?
     @FocusState private var focusedField: Field?
 
@@ -76,6 +77,7 @@ struct AddView: View {
             }
 
             NoteButton(note: $durationNote)
+            onCallToggle
         }
     }
 
@@ -120,6 +122,7 @@ struct AddView: View {
             .padding(.top, 2)
 
             NoteButton(note: $rangeNote)
+            onCallToggle
 
             HStack {
                 Spacer()
@@ -128,6 +131,17 @@ struct AddView: View {
                     .keyboardShortcut(.return, modifiers: [])
             }
         }
+    }
+
+    private var onCallToggle: some View {
+        Toggle(isOn: $isOnCallActive) {
+            Label("Active on-call", systemImage: "phone.fill")
+                .font(.caption)
+                .foregroundStyle(isOnCallActive ? .orange : .secondary)
+        }
+        .toggleStyle(.switch)
+        .tint(.orange)
+        .font(.caption)
     }
 
     private func combining(_ day: Date, time: Date) -> Date {
@@ -145,7 +159,8 @@ struct AddView: View {
         let h = Int(addHours) ?? 0
         let m = Int(addMinutes) ?? 0
         do {
-            try manager.addTime(hours: h, minutes: m, note: durationNote.trimmedOrNil)
+            try manager.addTime(hours: h, minutes: m, note: durationNote.trimmedOrNil,
+                                isOnCallActive: isOnCallActive)
             addHours = ""
             addMinutes = ""
             durationNote = ""
@@ -160,7 +175,8 @@ struct AddView: View {
         let start = combining(rangeDay, time: rangeStart)
         let end   = combining(rangeDay, time: rangeEnd)
         do {
-            try manager.addTimeRange(start: start, end: end, note: rangeNote.trimmedOrNil)
+            try manager.addTimeRange(start: start, end: end, note: rangeNote.trimmedOrNil,
+                                     isOnCallActive: isOnCallActive)
             rangeNote = ""
         } catch {
             entryError = error.localizedDescription

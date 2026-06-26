@@ -10,26 +10,33 @@ private struct ContentHeightKey: PreferenceKey {
 
 struct ContentView: View {
     @EnvironmentObject var manager: TimerManager
+    @ObservedObject private var appUIState = AppUIState.shared
 
     var onResize: ((CGFloat) -> Void)?
 
     @State private var activeTab: Tab = .timer
 
-    enum Tab { case timer, add, stats }
+    enum Tab { case timer, add, stats, onCall }
 
     var body: some View {
         VStack(spacing: 0) {
             headerSection
             Divider()
-            tabPicker
-            Divider()
-            switch activeTab {
-            case .timer:
-                timerSection
-            case .add:
-                AddView()
-            case .stats:
-                StatsView()
+            if appUIState.showSettings {
+                SettingsView()
+            } else {
+                tabPicker
+                Divider()
+                switch activeTab {
+                case .timer:
+                    timerSection
+                case .add:
+                    AddView()
+                case .stats:
+                    StatsView()
+                case .onCall:
+                    OnCallView()
+                }
             }
             Divider()
             footerSection
@@ -42,9 +49,12 @@ struct ContentView: View {
             DispatchQueue.main.async { onResize?(height) }
         }
         .onChange(of: activeTab) { tab in
-            if tab != .stats {
+            if tab != .stats && tab != .onCall {
                 (NSApp.delegate as? AppDelegate)?.closeSessionsDetail()
             }
+        }
+        .onChange(of: appUIState.showSettings) { showing in
+            if showing { (NSApp.delegate as? AppDelegate)?.closeSessionsDetail() }
         }
     }
 
@@ -53,6 +63,7 @@ struct ContentView: View {
             Text("Timer").tag(Tab.timer)
             Text("Add").tag(Tab.add)
             Text("Stats").tag(Tab.stats)
+            Text("On-call").tag(Tab.onCall)
         }
         .pickerStyle(.segmented)
         .padding(.horizontal, 16)
@@ -68,7 +79,7 @@ struct ContentView: View {
             Text("Time Tracker")
                 .font(.headline)
             Spacer()
-            if activeTab == .timer && manager.elapsedSeconds > 0 && !manager.isRunning {
+            if activeTab == .timer && manager.elapsedSeconds > 0 && !manager.isRunning && !appUIState.showSettings {
                 Button("Reset") {
                     manager.reset()
                 }
@@ -76,9 +87,22 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.red.opacity(0.8))
             }
+            Button {
+                appUIState.showSettings.toggle()
+            } label: {
+                Image(systemName: appUIState.showSettings ? "gearshape.fill" : "gearshape")
+                    .foregroundStyle(appUIState.showSettings ? .primary : .secondary)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    private var timerBorderColor: Color {
+        if manager.isRunningOnCall { return .orange }
+        if manager.isRunning { return .green }
+        return .gray.opacity(0.25)
     }
 
     private var timerSection: some View {
@@ -93,15 +117,15 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            manager.isRunning ? Color.green : Color.gray.opacity(0.25),
-                            lineWidth: 2
-                        )
+                        .stroke(timerBorderColor, lineWidth: 2)
                         .shadow(
-                            color: manager.isRunning ? Color.green.opacity(0.5) : .clear,
+                            color: manager.isRunning
+                                ? (manager.isRunningOnCall ? Color.orange.opacity(0.5) : Color.green.opacity(0.5))
+                                : .clear,
                             radius: 6
                         )
                         .animation(.easeInOut(duration: 0.3), value: manager.isRunning)
+                        .animation(.easeInOut(duration: 0.3), value: manager.isRunningOnCall)
                 )
 
             Button {
@@ -120,11 +144,28 @@ struct ContentView: View {
             .keyboardShortcut(.space, modifiers: [])
 
             if manager.isRunning {
-                NoteButton(note: $manager.pendingNote)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                HStack(spacing: 10) {
+                    NoteButton(note: $manager.pendingNote)
+                    if !manager.isRunningOnCall {
+                        Button {
+                            manager.startOnCallActive()
+                        } label: {
+                            Label("On-call", systemImage: "phone.fill")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.orange)
+                    } else {
+                        Label("ON-CALL", systemImage: "phone.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .animation(.easeInOut(duration: 0.2), value: manager.isRunning)
+        .animation(.easeInOut(duration: 0.2), value: manager.isRunningOnCall)
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
     }
@@ -132,12 +173,23 @@ struct ContentView: View {
     private var footerSection: some View {
         HStack {
             Spacer()
-            Button("Quit TimeTracker") {
-                NSApplication.shared.terminate(nil)
+            if appUIState.showSettings {
+                Button {
+                    appUIState.showSettings = false
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                Button("Quit TimeTracker") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(.vertical, 10)
