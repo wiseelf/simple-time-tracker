@@ -10,6 +10,7 @@ struct SessionsListView: View {
     @State private var editStart: Date = Date()
     @State private var editEnd: Date = Date()
     @State private var editNote: String = ""
+    @State private var editIsOnCallActive = false
     @State private var editError: String?
 
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
@@ -54,6 +55,14 @@ struct SessionsListView: View {
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(Color.accentColor.opacity(0.7), in: Capsule())
+                    }
+                    if session.isOnCallActive {
+                        Text("on-call")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.orange.opacity(0.85), in: Capsule())
                     }
                 }
                 Text(formatDuration(session.duration))
@@ -115,6 +124,15 @@ struct SessionsListView: View {
 
             NoteButton(note: $editNote)
 
+            Toggle(isOn: $editIsOnCallActive) {
+                Label("Active on-call", systemImage: "phone.fill")
+                    .font(.caption)
+                    .foregroundStyle(editIsOnCallActive ? .orange : .secondary)
+            }
+            .toggleStyle(.switch)
+            .tint(.orange)
+            .font(.caption)
+
             if let error = editError {
                 Text(error)
                     .font(.caption2)
@@ -145,12 +163,14 @@ struct SessionsListView: View {
         editStart = session.startDate
         editEnd = session.startDate.addingTimeInterval(TimeInterval(session.duration))
         editNote = session.note ?? ""
+        editIsOnCallActive = session.isOnCallActive
         editError = nil
     }
 
     private func cancelEdit() {
         editingID = nil
         editNote = ""
+        editIsOnCallActive = false
         editError = nil
     }
 
@@ -185,10 +205,12 @@ struct SessionsListView: View {
         }
 
         let duration = Int(editEnd.timeIntervalSince(editStart))
-        store.update(session, startDate: editStart, duration: duration, note: editNote.trimmedOrNil)
+        store.update(session, startDate: editStart, duration: duration, note: editNote.trimmedOrNil,
+                     isOnCallActive: editIsOnCallActive)
         if isToday { manager.resyncFromStore() }
         editingID = nil
         editNote = ""
+        editIsOnCallActive = false
     }
 
     private func deleteSession(_ session: TimeSession) {

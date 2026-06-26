@@ -38,9 +38,12 @@ class SessionStore: ObservableObject {
         persist()
     }
 
-    func update(_ session: TimeSession, startDate: Date, duration: Int, note: String?) {
+    func update(_ session: TimeSession, startDate: Date, duration: Int, note: String?,
+                isOnCallActive: Bool? = nil) {
         guard let idx = sessions.firstIndex(where: { $0.id == session.id }) else { return }
-        sessions[idx] = TimeSession(id: session.id, startDate: startDate, duration: duration, isManual: session.isManual, note: note)
+        sessions[idx] = TimeSession(id: session.id, startDate: startDate, duration: duration,
+                                    isManual: session.isManual, note: note,
+                                    isOnCallActive: isOnCallActive ?? session.isOnCallActive)
         sessions.sort { $0.startDate < $1.startDate }
         persist()
     }
