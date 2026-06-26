@@ -210,36 +210,24 @@ struct ScheduleRowEditor: View {
             }
             HStack(spacing: 6) {
                 Text("From").font(.system(size: 11)).foregroundStyle(.secondary)
-                Stepper(value: Binding(
+                MinutePickerField(minutes: Binding(
                     get: { schedule.startMinute },
                     set: { schedule = DaySchedule(id: schedule.id, daysOfWeek: schedule.daysOfWeek,
                                                   startMinute: $0, endMinute: schedule.endMinute) }
-                ), in: 0...1439, step: 30) {
-                    Text(minuteLabel(schedule.startMinute))
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(width: 38, alignment: .trailing)
-                }
-                .controlSize(.small)
+                ))
+                .frame(width: 86, height: 22)
 
                 Text("To").font(.system(size: 11)).foregroundStyle(.secondary)
-                Stepper(value: Binding(
+                MinutePickerField(minutes: Binding(
                     get: { schedule.endMinute },
                     set: { schedule = DaySchedule(id: schedule.id, daysOfWeek: schedule.daysOfWeek,
                                                   startMinute: schedule.startMinute, endMinute: $0) }
-                ), in: 1...1440, step: 30) {
-                    Text(minuteLabel(schedule.endMinute))
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(width: 38, alignment: .trailing)
-                }
-                .controlSize(.small)
+                ))
+                .frame(width: 86, height: 22)
             }
         }
         .padding(8)
         .background(Color.secondary.opacity(0.06))
         .cornerRadius(6)
-    }
-
-    private func minuteLabel(_ m: Int) -> String {
-        String(format: "%d:%02d", m / 60, m % 60)
     }
 }
