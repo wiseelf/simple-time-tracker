@@ -152,10 +152,7 @@ struct AddNonBillableRuleRow: View {
                         if selected { d.remove(num) } else { d.insert(num) }
                         days = d
                     }
-                    .buttonStyle(.bordered)
-                    .tint(selected ? .blue : .secondary)
-                    .controlSize(.mini)
-                    .font(.system(size: 10))
+                    .dayToggleStyle(selected: selected)
                 }
             }
             HStack(spacing: 6) {
