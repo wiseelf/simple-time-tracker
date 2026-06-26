@@ -93,7 +93,7 @@ struct OnCallSummaryView: View {
                 .frame(width: 46, alignment: .trailing)
                 .foregroundStyle(row.activeMinutes > 0 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.secondary.opacity(0.5)))
             if store.settings.incomeTrackingEnabled {
-                Text(row.income > 0 ? String(format: "%.0f", row.income) : "—")
+                Text(row.income > 0 ? String(format: "%@%.0f", store.settings.currencySymbol, row.income) : "—")
                     .frame(width: 48, alignment: .trailing)
             }
         }
@@ -115,7 +115,7 @@ struct OnCallSummaryView: View {
                 .frame(width: 46, alignment: .trailing)
                 .foregroundStyle(totals.active > 0 ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.secondary.opacity(0.5)))
             if store.settings.incomeTrackingEnabled {
-                Text(totals.income > 0 ? String(format: "%.0f", totals.income) : "—")
+                Text(totals.income > 0 ? String(format: "%@%.0f", store.settings.currencySymbol, totals.income) : "—")
                     .frame(width: 48, alignment: .trailing)
             }
         }

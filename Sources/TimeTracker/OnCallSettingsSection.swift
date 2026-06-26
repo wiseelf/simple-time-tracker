@@ -20,6 +20,19 @@ struct OnCallSettingsSection: View {
                 .font(.system(size: 12))
 
                 if store.settings.incomeTrackingEnabled {
+                    HStack {
+                        Text("Currency").font(.system(size: 11))
+                        Spacer()
+                        TextField("$", text: Binding(
+                            get: { store.settings.currencySymbol },
+                            set: { store.updateSettings(store.settings.with(currencySymbol: $0)) }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 44)
+                        .font(.system(size: 11))
+                        .multilineTextAlignment(.center)
+                    }
+
                     multiplierRow(label: "Passive", value: store.settings.passiveMultiplier) { v in
                         store.updateSettings(store.settings.with(passiveMultiplier: v))
                     }
@@ -34,7 +47,7 @@ struct OnCallSettingsSection: View {
                             Text(entry.effectiveFrom.formatted(.dateTime.month(.abbreviated).day().year()))
                                 .font(.system(size: 11))
                             Spacer()
-                            Text(String(format: "%.2f /hr", entry.rate))
+                            Text(String(format: "%@%.2f /hr", store.settings.currencySymbol, entry.rate))
                                 .font(.system(size: 11, design: .monospaced))
                             Button {
                                 var s = store.settings
@@ -182,20 +195,31 @@ private extension OnCallSettings {
                        passiveMultiplier: passiveMultiplier,
                        activeMultiplier: activeMultiplier,
                        nonBillableRules: nonBillableRules,
-                       rateHistory: rateHistory)
+                       rateHistory: rateHistory,
+                       currencySymbol: currencySymbol)
     }
     func with(passiveMultiplier: Double) -> OnCallSettings {
         OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
                        passiveMultiplier: passiveMultiplier,
                        activeMultiplier: activeMultiplier,
                        nonBillableRules: nonBillableRules,
-                       rateHistory: rateHistory)
+                       rateHistory: rateHistory,
+                       currencySymbol: currencySymbol)
     }
     func with(activeMultiplier: Double) -> OnCallSettings {
         OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
                        passiveMultiplier: passiveMultiplier,
                        activeMultiplier: activeMultiplier,
                        nonBillableRules: nonBillableRules,
-                       rateHistory: rateHistory)
+                       rateHistory: rateHistory,
+                       currencySymbol: currencySymbol)
+    }
+    func with(currencySymbol: String) -> OnCallSettings {
+        OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
+                       passiveMultiplier: passiveMultiplier,
+                       activeMultiplier: activeMultiplier,
+                       nonBillableRules: nonBillableRules,
+                       rateHistory: rateHistory,
+                       currencySymbol: currencySymbol)
     }
 }

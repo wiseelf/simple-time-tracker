@@ -182,21 +182,22 @@ struct StatsView: View {
 
     private var incomeFooterSection: some View {
         let income = periodIncome
+        let sym = onCallStore.settings.currencySymbol
         return HStack(spacing: 0) {
-            incomeCell(label: "REGULAR", value: income.regular)
+            incomeCell(label: "REGULAR", value: income.regular, symbol: sym)
             Spacer()
-            incomeCell(label: "ON-CALL", value: income.onCall)
+            incomeCell(label: "ON-CALL", value: income.onCall, symbol: sym)
             Spacer()
-            incomeCell(label: "TOTAL", value: income.total)
+            incomeCell(label: "TOTAL", value: income.total, symbol: sym)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
     }
 
-    private func incomeCell(label: String, value: Double) -> some View {
+    private func incomeCell(label: String, value: Double, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 9, weight: .medium)).foregroundStyle(.tertiary)
-            Text(value > 0 ? String(format: "%.0f", value) : "—")
+            Text(value > 0 ? String(format: "%@%.0f", symbol, value) : "—")
                 .font(.system(size: 14, weight: .semibold, design: .monospaced))
         }
     }
