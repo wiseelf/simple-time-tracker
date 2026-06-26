@@ -16,7 +16,7 @@ struct ScheduleTab: View {
                 calendarSection
                 if let date = selectedDate {
                     Divider()
-                    dayDetailPanel(for: date)
+                    DayDetailPanel(store: store, date: date) { selectedDate = nil }
                 }
             }
         }
@@ -108,81 +108,7 @@ struct ScheduleTab: View {
         }
     }
 
-    // MARK: - Day detail panel
-
-    private func dayDetailPanel(for date: Date) -> some View {
-        let cal       = Calendar.current
-        let d         = cal.startOfDay(for: date)
-        let resolved  = store.rules.first?.resolvedWindow(on: date, exceptions: store.exceptions)
-        let rawWindow = store.rules.first?.window(on: date)
-        let isOnCall  = resolved != nil
-        let hasExc    = store.exceptions.contains { cal.startOfDay(for: $0.date) == d }
-
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                    .font(.system(size: 12, weight: .medium))
-                Spacer()
-                Button { selectedDate = nil } label: {
-                    Image(systemName: "xmark").font(.system(size: 10))
-                }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-            }
-
-            HStack(spacing: 8) {
-                Text("On-call").font(.system(size: 11))
-                Toggle("", isOn: Binding(
-                    get: { isOnCall },
-                    set: { toggleOnCall(date: date, rawWindow: rawWindow, newValue: $0) }
-                ))
-                .labelsHidden().toggleStyle(.switch).controlSize(.mini)
-            }
-
-            if isOnCall, let w = resolved {
-                HStack(spacing: 6) {
-                    Text("From").font(.system(size: 11)).foregroundStyle(.secondary)
-                    MinutePickerField(minutes: Binding(
-                        get: { w.0 },
-                        set: { store.upsertException(ScheduleException(date: date,
-                                   kind: .override(startMinute: $0, endMinute: w.1))) }
-                    ))
-                    .frame(width: 86, height: 22)
-                    Text("To").font(.system(size: 11)).foregroundStyle(.secondary)
-                    MinutePickerField(minutes: Binding(
-                        get: { w.1 },
-                        set: { store.upsertException(ScheduleException(date: date,
-                                   kind: .override(startMinute: w.0, endMinute: $0))) }
-                    ))
-                    .frame(width: 86, height: 22)
-                }
-                if hasExc {
-                    Button("Reset to rule defaults") { store.removeException(for: date) }
-                        .font(.system(size: 10)).buttonStyle(.plain).foregroundColor(.accentColor)
-                }
-            }
-        }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-    }
-
     // MARK: - Helpers
-
-    private func toggleOnCall(date: Date, rawWindow: (Int, Int)?, newValue: Bool) {
-        guard let rule = store.rules.first else { return }
-        if newValue {
-            if rawWindow != nil {
-                store.removeException(for: date)
-            } else {
-                store.upsertException(ScheduleException(date: date,
-                    kind: .override(startMinute: rule.startMinute, endMinute: rule.endMinute)))
-            }
-        } else {
-            if rawWindow != nil {
-                store.upsertException(ScheduleException(date: date, kind: .skip))
-            } else {
-                store.removeException(for: date)
-            }
-        }
-    }
 
     private var monthLabel: String {
         let cal = Calendar.current
@@ -206,4 +132,87 @@ struct ScheduleTab: View {
     }
 
     private func fmt(_ m: Int) -> String { String(format: "%d:%02d", m / 60, m % 60) }
+}
+
+// MARK: - DayDetailPanel
+
+// Separate View struct so @ObservedObject store keeps computed properties live inside
+// Binding.get closures — avoids stale captures from let-constants in a plain function.
+private struct DayDetailPanel: View {
+    @ObservedObject var store: OnCallStore
+    let date: Date
+    var onDismiss: () -> Void
+
+    private var resolved: (Int, Int)? {
+        store.rules.first?.resolvedWindow(on: date, exceptions: store.exceptions)
+    }
+
+    private var rawWindow: (Int, Int)? {
+        store.rules.first?.window(on: date)
+    }
+
+    private var hasException: Bool {
+        let cal = Calendar.current
+        let d   = cal.startOfDay(for: date)
+        return store.exceptions.contains { cal.startOfDay(for: $0.date) == d }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+                Button { onDismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 10))
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Text("On-call").font(.system(size: 11))
+                Toggle("", isOn: Binding(
+                    get: { resolved != nil },
+                    set: { newValue in
+                        guard let rule = store.rules.first else { return }
+                        let rw = rawWindow
+                        if newValue {
+                            if rw != nil { store.removeException(for: date) }
+                            else { store.upsertException(ScheduleException(date: date,
+                                       kind: .override(startMinute: rule.startMinute,
+                                                       endMinute: rule.endMinute))) }
+                        } else {
+                            if rw != nil { store.upsertException(ScheduleException(date: date, kind: .skip)) }
+                            else { store.removeException(for: date) }
+                        }
+                    }
+                ))
+                .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+            }
+
+            if let w = resolved {
+                HStack(spacing: 6) {
+                    Text("From").font(.system(size: 11)).foregroundStyle(.secondary)
+                    MinutePickerField(minutes: Binding(
+                        get: { resolved?.0 ?? w.0 },
+                        set: { store.upsertException(ScheduleException(date: date,
+                                   kind: .override(startMinute: $0, endMinute: resolved?.1 ?? w.1))) }
+                    ))
+                    .frame(width: 86, height: 22)
+                    Text("To").font(.system(size: 11)).foregroundStyle(.secondary)
+                    MinutePickerField(minutes: Binding(
+                        get: { resolved?.1 ?? w.1 },
+                        set: { store.upsertException(ScheduleException(date: date,
+                                   kind: .override(startMinute: resolved?.0 ?? w.0, endMinute: $0))) }
+                    ))
+                    .frame(width: 86, height: 22)
+                }
+                if hasException {
+                    Button("Reset to rule defaults") { store.removeException(for: date) }
+                        .font(.system(size: 10)).buttonStyle(.plain).foregroundColor(.accentColor)
+                }
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+    }
 }
