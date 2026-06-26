@@ -173,12 +173,23 @@ struct ContentView: View {
     private var footerSection: some View {
         HStack {
             Spacer()
-            Button("Quit TimeTracker") {
-                NSApplication.shared.terminate(nil)
+            if appUIState.showSettings {
+                Button {
+                    appUIState.showSettings = false
+                } label: {
+                    Label("Back", systemImage: "chevron.left")
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                Button("Quit TimeTracker") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(.vertical, 10)

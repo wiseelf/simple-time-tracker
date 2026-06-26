@@ -2,8 +2,16 @@ import SwiftUI
 
 struct OnCallRotationListView: View {
     @ObservedObject var store: OnCallStore
+    var filterStart: Date? = nil
+    var filterEnd: Date? = nil
+
     @State private var showingAdd = false
     @State private var editingRotation: OnCallRotationBlock? = nil
+
+    private var visibleRotations: [OnCallRotationBlock] {
+        guard let s = filterStart, let e = filterEnd else { return store.rotations }
+        return store.rotations.filter { $0.startDate <= e && $0.endDate >= s }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,14 +31,14 @@ struct OnCallRotationListView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
 
-            if store.rotations.isEmpty {
-                Text("No rotations defined")
+            if visibleRotations.isEmpty {
+                Text(filterStart != nil ? "No rotations this period" : "No rotations defined")
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 6)
             } else {
-                ForEach(store.rotations) { rotation in
+                ForEach(visibleRotations) { rotation in
                     rotationRow(rotation)
                 }
             }

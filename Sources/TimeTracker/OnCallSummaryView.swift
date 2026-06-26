@@ -11,12 +11,16 @@ struct OnCallSummaryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Divider()
             summaryHeader
+            Divider()
+            OnCallRotationListView(store: store, filterStart: periodStart, filterEnd: periodEnd)
             Divider()
             summaryRows
         }
     }
+
+    private var periodStart: Date? { periodDates.first }
+    private var periodEnd: Date? { periodDates.last }
 
     private var summaryHeader: some View {
         VStack(spacing: 6) {
@@ -46,8 +50,7 @@ struct OnCallSummaryView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(currentOffset < 0 ? .secondary : .tertiary)
-                .disabled(currentOffset >= 0)
+                .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 12)
@@ -189,8 +192,8 @@ struct OnCallSummaryView: View {
     private var currentOffset: Int { period == .week ? weekOffset : monthOffset }
 
     private func stepPeriod(_ delta: Int) {
-        if period == .week { weekOffset  = min(0, weekOffset  + delta) }
-        else               { monthOffset = min(0, monthOffset + delta) }
+        if period == .week { weekOffset  += delta }
+        else               { monthOffset += delta }
     }
 
     private var periodLabel: String {
