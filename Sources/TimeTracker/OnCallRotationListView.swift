@@ -205,10 +205,7 @@ struct ScheduleRowEditor: View {
                         schedule = DaySchedule(id: schedule.id, daysOfWeek: days.sorted(),
                                               startMinute: schedule.startMinute, endMinute: schedule.endMinute)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(selected ? .blue : .secondary)
-                    .controlSize(.mini)
-                    .font(.system(size: 10))
+                    .dayToggleStyle(selected: selected)
                 }
                 Spacer()
                 Button { onDelete() } label: {
