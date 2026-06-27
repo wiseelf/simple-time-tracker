@@ -10,6 +10,7 @@ struct StatsView: View {
     @State private var period: Period = .week
     @State private var weekOffset: Int = 0
     @State private var monthOffset: Int = 0
+    @State private var showingReportPicker = false
 
     private var appDelegate: AppDelegate? { NSApp.delegate as? AppDelegate }
 
@@ -25,7 +26,12 @@ struct StatsView: View {
                 incomeFooterSection
             }
             Divider()
-            backupSection
+            reportSection
+        }
+        .sheet(isPresented: $showingReportPicker) {
+            ReportPickerSheet(defaultOption: period == .week ? .week : .month) { dates, label in
+                generateAndSaveReport(dates: dates, label: label)
+            }
         }
     }
 
@@ -242,35 +248,20 @@ struct StatsView: View {
         return result
     }
 
-    // MARK: - Backup
+    // MARK: - Report
 
-    private var backupSection: some View {
+    private var reportSection: some View {
         HStack {
-            Button { exportBackup() } label: {
-                Label("Export", systemImage: "square.and.arrow.up")
-                    .font(.caption)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-
-            Button { exportReport() } label: {
+            Button { showingReportPicker = true } label: {
                 Label("Report", systemImage: "doc.text")
                     .font(.caption)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-
             Spacer()
-
-            Button { importBackup() } label: {
-                Label("Import", systemImage: "square.and.arrow.down")
-                    .font(.caption)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Data models
@@ -403,45 +394,13 @@ struct StatsView: View {
         return "<1m"
     }
 
-    // MARK: - Export / Import
+    // MARK: - Report
 
-    private func exportBackup() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        let dateStr = Date().formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
-        panel.nameFieldStringValue = "timetracker-\(dateStr).json"
-        appDelegate?.suppressAutoClose = true
-        defer { appDelegate?.suppressAutoClose = false }
-        let result = appDelegate?.withPanelLowered { panel.runModal() } ?? panel.runModal()
-        guard result == .OK, let url = panel.url,
-              let data = SessionStore.shared.exportData() else { return }
-        try? data.write(to: url, options: .atomic)
-    }
-
-    private func exportReport() {
-        let cal = Calendar.current
-        let dates: [Date]
-        if period == .week {
-            guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-                  let start = cal.date(byAdding: .weekOfYear, value: weekOffset, to: weekStart)
-            else { return }
-            dates = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
-        } else {
-            guard let monthStart = cal.dateInterval(of: .month, for: .now)?.start,
-                  let start = cal.date(byAdding: .month, value: monthOffset, to: monthStart),
-                  let monthEnd = cal.date(byAdding: .month, value: 1, to: start)
-            else { return }
-            var d = start; var all: [Date] = []
-            while d < monthEnd { all.append(d); d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86400) }
-            dates = all
-        }
-
-        // Strip "This Week · " / "This Month · " prefix for the report header
-        let cleanLabel = periodLabel.components(separatedBy: " · ").last ?? periodLabel
+    private func generateAndSaveReport(dates: [Date], label: String) {
         let allSessions = dates.flatMap { store.sessions(on: $0) }
         let report = ReportGenerator.generate(
             dates: dates,
-            periodLabel: cleanLabel,
+            periodLabel: label,
             sessions: allSessions,
             rotations: onCallStore.rotations,
             rules: onCallStore.rules,
@@ -451,8 +410,7 @@ struct StatsView: View {
         let markdown = report.markdownString(currencySymbol: onCallStore.settings.currencySymbol)
 
         let panel = NSSavePanel()
-        let mdType = UTType(filenameExtension: "md") ?? .plainText
-        panel.allowedContentTypes = [mdType]
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
         let dateStr = Date().formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
         panel.nameFieldStringValue = "time-report-\(dateStr).md"
         appDelegate?.suppressAutoClose = true
@@ -460,63 +418,5 @@ struct StatsView: View {
         let result = appDelegate?.withPanelLowered { panel.runModal() } ?? panel.runModal()
         guard result == .OK, let url = panel.url else { return }
         try? markdown.write(to: url, atomically: true, encoding: .utf8)
-    }
-
-    private func importBackup() {
-        let openPanel = NSOpenPanel()
-        openPanel.allowedContentTypes = [.json]
-        openPanel.allowsMultipleSelection = false
-        openPanel.message = "Select a TimeTracker backup file"
-        appDelegate?.suppressAutoClose = true
-        defer { appDelegate?.suppressAutoClose = false }
-        let openResult = appDelegate?.withPanelLowered { openPanel.runModal() } ?? openPanel.runModal()
-        guard openResult == .OK, let url = openPanel.urls.first,
-              let data = try? Data(contentsOf: url)
-        else { return }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let imported = try? decoder.decode([TimeSession].self, from: data) else {
-            let err = NSAlert()
-            err.messageText = "Invalid backup file"
-            err.informativeText = "The selected file is not a valid TimeTracker backup."
-            err.alertStyle = .warning
-            appDelegate?.withPanelLowered { err.runModal() }
-            return
-        }
-
-        let existing = SessionStore.shared.sessions
-        let existingIDs = Set(existing.map { $0.id })
-        let newCount = imported.filter { !existingIDs.contains($0.id) }.count
-        let skipCount = imported.count - newCount
-
-        let alert = NSAlert()
-        alert.messageText = "Import \(imported.count) session\(imported.count == 1 ? "" : "s")?"
-        var info = newCount > 0
-            ? "\(newCount) new session\(newCount == 1 ? "" : "s") will be added."
-            : "No new sessions to add."
-        if skipCount > 0 {
-            info += "\n\(skipCount) duplicate\(skipCount == 1 ? "" : "s") will be skipped."
-        }
-        info += "\n\nChoose Replace to erase all existing data and import only the backup file."
-        alert.informativeText = info
-        alert.addButton(withTitle: "Merge")
-        alert.addButton(withTitle: "Replace")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .informational
-
-        let response = appDelegate?.withPanelLowered { alert.runModal() } ?? alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn: // Merge
-            // Save any running segment so it's included in today's total after reload
-            if TimerManager.shared.isRunning { TimerManager.shared.stop() }
-            try? SessionStore.shared.importSessions(from: data)
-            TimerManager.shared.reloadFromStore()
-        case .alertSecondButtonReturn: // Replace
-            // Discard in-progress segment — we're replacing everything
-            SessionStore.shared.replaceAll(with: imported)
-            TimerManager.shared.reloadFromStore()
-        default:
-            break
-        }
     }
 }
