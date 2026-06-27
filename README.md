@@ -16,6 +16,7 @@ A lightweight native macOS menu bar app for tracking time. No Dock icon, no back
 - **Statistics** — bar chart per day (week view) or per calendar week (month view), with period total and daily average; on-call active sessions shown as orange overlay; optional income footer
 - **On-call billing** — define rotation blocks with per-day-of-week schedules; global non-billable window; passive on-call derived automatically; click "On-call" while running to split into an active on-call segment; configurable passive/active rate multipliers; optional income tracking with rate history
 - **Recurrence rules** — define a recurring on-call rotation (every N days or specific days of the week) with a default time window; the app pre-fills a month calendar grid with on-call days; tap any day to skip it, add an exception, or override its hours; all exception edits persist and feed directly into billing summaries
+- **Period report** — export a Markdown report for the current week or month with daily tracked hours, on-call hours, and calculated amounts (regular and on-call separately), plus period totals and grand total; saved as a `.md` file via `NSSavePanel`
 - **Export / Import** — back up all sessions to a JSON file and restore (merge or replace) on any machine
 - **System notifications** — notified when the timer starts, stops, or is auto-stopped
 - **Right-click menu** — right-click the menu bar icon to access About and Quit without opening the main panel
@@ -59,7 +60,8 @@ simple-time-tracker/
 │   │   ├── Extensions.swift             # String.trimmedOrNil
 │   │   ├── OnCallModels.swift           # OnCallRotationBlock, DaySchedule, OnCallSettings, …
 │   │   ├── RecurrenceModels.swift       # RecurrenceRule, ScheduleException, day-generation logic
-│   │   └── OnCallBilling.swift          # Billable/passive/active minute computation + rate lookup
+│   │   ├── OnCallBilling.swift          # Billable/passive/active minute computation + rate lookup
+│   │   └── ReportGenerator.swift        # Period report data model + Markdown formatter
 │   └── TimeTracker/                     # macOS app executable
 │       ├── CoreImport.swift             # @_exported import TimeTrackerCore
 │       ├── main.swift                   # Entry point — NSApplication setup
@@ -227,6 +229,7 @@ public struct ScheduleException: Codable, Identifiable {
 - **Month view** — bar chart with one row per calendar week within the month. Tapping a row navigates to the corresponding week in week view.
 - Navigation labels show date ranges: `This Week · Mar 9–15`, `Last Month · Feb 2026`, etc.
 - Footer shows **Total** and **Avg / day** (averaged over days/weeks with tracked time only).
+- **Report** — generates a Markdown report for the current period: daily rows with tracked hours, on-call hours, and amounts (when income tracking is on); period subtotals for regular and on-call; grand total. Saves as `.md` via `NSSavePanel`. Uses `ReportGenerator` from `TimeTrackerCore`.
 - **Export** — opens `NSSavePanel`; saves all sessions as a JSON file.
 - **Import** — opens `NSOpenPanel`; decodes the file, shows a confirmation alert with new/duplicate counts, and offers **Merge** (add new sessions only) or **Replace** (erase existing data).
 

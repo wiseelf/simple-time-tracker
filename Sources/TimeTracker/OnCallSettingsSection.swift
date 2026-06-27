@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject private var store = OnCallStore.shared
@@ -8,6 +9,8 @@ struct SettingsView: View {
     @State private var editingRateDate: Date = .now
     @State private var editingRateText: String = ""
     @State private var showingAddNB = false
+
+    private var appDelegate: AppDelegate? { NSApp.delegate as? AppDelegate }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -161,6 +164,25 @@ struct SettingsView: View {
                     showingAddNB = false
                 }
             }
+
+            Divider()
+
+            HStack {
+                Button { exportBackup() } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button { importBackup() } label: {
+                    Label("Import", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+            .font(.system(size: 11))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -174,6 +196,77 @@ struct SettingsView: View {
 
     private func minuteLabel(_ m: Int) -> String {
         String(format: "%d:%02d", m / 60, m % 60)
+    }
+
+    // MARK: - Backup
+
+    func exportBackup() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        let dateStr = Date().formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
+        panel.nameFieldStringValue = "timetracker-\(dateStr).json"
+        appDelegate?.suppressAutoClose = true
+        defer { appDelegate?.suppressAutoClose = false }
+        let result = appDelegate?.withPanelLowered { panel.runModal() } ?? panel.runModal()
+        guard result == .OK, let url = panel.url,
+              let data = SessionStore.shared.exportData() else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    func importBackup() {
+        let openPanel = NSOpenPanel()
+        openPanel.allowedContentTypes = [.json]
+        openPanel.allowsMultipleSelection = false
+        openPanel.message = "Select a TimeTracker backup file"
+        appDelegate?.suppressAutoClose = true
+        defer { appDelegate?.suppressAutoClose = false }
+        let openResult = appDelegate?.withPanelLowered { openPanel.runModal() } ?? openPanel.runModal()
+        guard openResult == .OK, let url = openPanel.urls.first,
+              let data = try? Data(contentsOf: url)
+        else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let imported = try? decoder.decode([TimeSession].self, from: data) else {
+            let err = NSAlert()
+            err.messageText = "Invalid backup file"
+            err.informativeText = "The selected file is not a valid TimeTracker backup."
+            err.alertStyle = .warning
+            appDelegate?.withPanelLowered { err.runModal() }
+            return
+        }
+
+        let existing = SessionStore.shared.sessions
+        let existingIDs = Set(existing.map { $0.id })
+        let newCount = imported.filter { !existingIDs.contains($0.id) }.count
+        let skipCount = imported.count - newCount
+
+        let alert = NSAlert()
+        alert.messageText = "Import \(imported.count) session\(imported.count == 1 ? "" : "s")?"
+        var info = newCount > 0
+            ? "\(newCount) new session\(newCount == 1 ? "" : "s") will be added."
+            : "No new sessions to add."
+        if skipCount > 0 {
+            info += "\n\(skipCount) duplicate\(skipCount == 1 ? "" : "s") will be skipped."
+        }
+        info += "\n\nChoose Replace to erase all existing data and import only the backup file."
+        alert.informativeText = info
+        alert.addButton(withTitle: "Merge")
+        alert.addButton(withTitle: "Replace")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .informational
+
+        let response = appDelegate?.withPanelLowered { alert.runModal() } ?? alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            if TimerManager.shared.isRunning { TimerManager.shared.stop() }
+            try? SessionStore.shared.importSessions(from: data)
+            TimerManager.shared.reloadFromStore()
+        case .alertSecondButtonReturn:
+            SessionStore.shared.replaceAll(with: imported)
+            TimerManager.shared.reloadFromStore()
+        default:
+            break
+        }
     }
 }
 
