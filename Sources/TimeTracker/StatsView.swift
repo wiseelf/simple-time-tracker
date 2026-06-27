@@ -253,6 +253,13 @@ struct StatsView: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
 
+            Button { exportReport() } label: {
+                Label("Report", systemImage: "doc.text")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+
             Spacer()
 
             Button { importBackup() } label: {
@@ -409,6 +416,50 @@ struct StatsView: View {
         guard result == .OK, let url = panel.url,
               let data = SessionStore.shared.exportData() else { return }
         try? data.write(to: url, options: .atomic)
+    }
+
+    private func exportReport() {
+        let cal = Calendar.current
+        let dates: [Date]
+        if period == .week {
+            guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
+                  let start = cal.date(byAdding: .weekOfYear, value: weekOffset, to: weekStart)
+            else { return }
+            dates = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
+        } else {
+            guard let monthStart = cal.dateInterval(of: .month, for: .now)?.start,
+                  let start = cal.date(byAdding: .month, value: monthOffset, to: monthStart),
+                  let monthEnd = cal.date(byAdding: .month, value: 1, to: start)
+            else { return }
+            var d = start; var all: [Date] = []
+            while d < monthEnd { all.append(d); d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86400) }
+            dates = all
+        }
+
+        // Strip "This Week · " / "This Month · " prefix for the report header
+        let cleanLabel = periodLabel.components(separatedBy: " · ").last ?? periodLabel
+        let allSessions = dates.flatMap { store.sessions(on: $0) }
+        let report = ReportGenerator.generate(
+            dates: dates,
+            periodLabel: cleanLabel,
+            sessions: allSessions,
+            rotations: onCallStore.rotations,
+            rules: onCallStore.rules,
+            exceptions: onCallStore.exceptions,
+            settings: onCallStore.settings
+        )
+        let markdown = report.markdownString(currencySymbol: onCallStore.settings.currencySymbol)
+
+        let panel = NSSavePanel()
+        let mdType = UTType(filenameExtension: "md") ?? .plainText
+        panel.allowedContentTypes = [mdType]
+        let dateStr = Date().formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
+        panel.nameFieldStringValue = "time-report-\(dateStr).md"
+        appDelegate?.suppressAutoClose = true
+        defer { appDelegate?.suppressAutoClose = false }
+        let result = appDelegate?.withPanelLowered { panel.runModal() } ?? panel.runModal()
+        guard result == .OK, let url = panel.url else { return }
+        try? markdown.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private func importBackup() {
