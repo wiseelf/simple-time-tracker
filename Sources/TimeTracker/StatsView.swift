@@ -29,7 +29,7 @@ struct StatsView: View {
             reportSection
         }
         .sheet(isPresented: $showingReportPicker) {
-            ReportPickerSheet(defaultOption: period == .week ? .week : .month) { dates, label in
+            ReportPickerSheet(defaultOption: period == .week ? .thisWeek : .thisMonth) { dates, label in
                 generateAndSaveReport(dates: dates, label: label)
             }
         }
