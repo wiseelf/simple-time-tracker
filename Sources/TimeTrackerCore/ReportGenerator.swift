@@ -32,28 +32,40 @@ public struct ReportData {
         }
     }
 
-    public func markdownString(currencySymbol sym: String) -> String {
+    public func markdownString(currencySymbol sym: String, includeOnCall: Bool = true) -> String {
         let showAmounts = rows.contains { $0.regularAmount != nil }
         var out = "# Time Report — \(periodLabel)\n\n"
 
-        if showAmounts {
+        if showAmounts && includeOnCall {
             out += "| Date | Hours | Amount | On-call | OC Amount |\n"
             out += "|------|------:|-------:|--------:|----------:|\n"
-        } else {
+        } else if showAmounts {
+            out += "| Date | Hours | Amount |\n"
+            out += "|------|------:|-------:|\n"
+        } else if includeOnCall {
             out += "| Date | Hours | On-call |\n"
             out += "|------|------:|--------:|\n"
+        } else {
+            out += "| Date | Hours |\n"
+            out += "|------|------:|\n"
         }
 
         for row in rows {
-            let d  = row.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-            let h  = row.regularSeconds > 0 ? fmtSecs(row.regularSeconds) : "—"
-            let oc = row.onCallMinutes  > 0 ? fmtMins(row.onCallMinutes)  : "—"
-            if showAmounts {
+            let d = row.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            let h = row.regularSeconds > 0 ? fmtSecs(row.regularSeconds) : "—"
+            if showAmounts && includeOnCall {
                 let amt   = row.regularAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
+                let oc    = row.onCallMinutes > 0 ? fmtMins(row.onCallMinutes) : "—"
                 let ocAmt = row.onCallAmount.map  { String(format: "%@%.2f", sym, $0) } ?? "—"
                 out += "| \(d) | \(h) | \(amt) | \(oc) | \(ocAmt) |\n"
-            } else {
+            } else if showAmounts {
+                let amt = row.regularAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
+                out += "| \(d) | \(h) | \(amt) |\n"
+            } else if includeOnCall {
+                let oc = row.onCallMinutes > 0 ? fmtMins(row.onCallMinutes) : "—"
                 out += "| \(d) | \(h) | \(oc) |\n"
+            } else {
+                out += "| \(d) | \(h) |\n"
             }
         }
 
@@ -61,14 +73,18 @@ public struct ReportData {
 
         if showAmounts {
             let regAmt = totalRegularAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
-            let ocAmt  = totalOnCallAmount.map  { String(format: "%@%.2f", sym, $0) } ?? "—"
-            let grand  = grandTotal.map         { String(format: "%@%.2f", sym, $0) } ?? "—"
             out += "Regular:   \(fmtSecs(totalRegularSeconds))   \(regAmt)\n"
-            out += "On-call:   \(fmtMins(totalOnCallMinutes))    \(ocAmt)\n"
-            out += "Total:                \(grand)\n"
+            if includeOnCall {
+                let ocAmt = totalOnCallAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
+                let grand = grandTotal.map        { String(format: "%@%.2f", sym, $0) } ?? "—"
+                out += "On-call:   \(fmtMins(totalOnCallMinutes))    \(ocAmt)\n"
+                out += "Total:                \(grand)\n"
+            }
         } else {
             out += "Regular:   \(fmtSecs(totalRegularSeconds))\n"
-            out += "On-call:   \(fmtMins(totalOnCallMinutes))\n"
+            if includeOnCall {
+                out += "On-call:   \(fmtMins(totalOnCallMinutes))\n"
+            }
         }
 
         return out

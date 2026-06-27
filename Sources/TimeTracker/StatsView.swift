@@ -29,8 +29,8 @@ struct StatsView: View {
             reportSection
         }
         .sheet(isPresented: $showingReportPicker) {
-            ReportPickerSheet(defaultOption: period == .week ? .thisWeek : .thisMonth) { dates, label in
-                generateAndSaveReport(dates: dates, label: label)
+            ReportPickerSheet(defaultOption: period == .week ? .thisWeek : .thisMonth) { dates, label, filenameBase, includeOnCall in
+                generateAndSaveReport(dates: dates, label: label, filenameBase: filenameBase, includeOnCall: includeOnCall)
             }
         }
     }
@@ -396,7 +396,7 @@ struct StatsView: View {
 
     // MARK: - Report
 
-    private func generateAndSaveReport(dates: [Date], label: String) {
+    private func generateAndSaveReport(dates: [Date], label: String, filenameBase: String, includeOnCall: Bool) {
         let allSessions = dates.flatMap { store.sessions(on: $0) }
         let report = ReportGenerator.generate(
             dates: dates,
@@ -407,12 +407,12 @@ struct StatsView: View {
             exceptions: onCallStore.exceptions,
             settings: onCallStore.settings
         )
-        let markdown = report.markdownString(currencySymbol: onCallStore.settings.currencySymbol)
+        let markdown = report.markdownString(currencySymbol: onCallStore.settings.currencySymbol,
+                                             includeOnCall: includeOnCall)
 
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-        let dateStr = Date().formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
-        panel.nameFieldStringValue = "time-report-\(dateStr).md"
+        panel.nameFieldStringValue = "time-report-\(filenameBase).md"
         appDelegate?.suppressAutoClose = true
         defer { appDelegate?.suppressAutoClose = false }
         let result = appDelegate?.withPanelLowered { panel.runModal() } ?? panel.runModal()

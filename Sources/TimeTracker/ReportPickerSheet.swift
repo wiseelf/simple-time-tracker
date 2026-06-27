@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ReportPickerSheet: View {
-    var onExport: ([Date], String) -> Void
+    var onExport: ([Date], String, String, Bool) -> Void
 
     enum Option: CaseIterable {
         case thisWeek, lastWeek, thisMonth, lastMonth, custom
@@ -19,9 +19,10 @@ struct ReportPickerSheet: View {
     @State private var option: Option
     @State private var customStart: Date
     @State private var customEnd: Date
+    @State private var includeOnCall: Bool = true
     @Environment(\.dismiss) private var dismiss
 
-    init(defaultOption: Option = .thisWeek, onExport: @escaping ([Date], String) -> Void) {
+    init(defaultOption: Option = .thisWeek, onExport: @escaping ([Date], String, String, Bool) -> Void) {
         self.onExport = onExport
         let cal = Calendar.current
         let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start ?? .now
@@ -39,6 +40,10 @@ struct ReportPickerSheet: View {
             }
             .labelsHidden()
 
+            Toggle("Include on-call hours", isOn: $includeOnCall)
+                .toggleStyle(.switch)
+                .font(.system(size: 12))
+
             if option == .custom {
                 HStack(spacing: 8) {
                     DatePicker("", selection: $customStart, displayedComponents: .date)
@@ -54,7 +59,7 @@ struct ReportPickerSheet: View {
             HStack {
                 Button("Cancel") { dismiss() }.buttonStyle(.bordered)
                 Spacer()
-                Button("Export") { onExport(dates, label); dismiss() }
+                Button("Export") { onExport(dates, label, filenameBase, includeOnCall); dismiss() }
                     .buttonStyle(.borderedProminent)
             }
         }
@@ -105,6 +110,44 @@ struct ReportPickerSheet: View {
             let s = customStart.formatted(.dateTime.month(.abbreviated).day().year())
             let e = customEnd.formatted(.dateTime.month(.abbreviated).day().year())
             return "\(s) – \(e)"
+        }
+    }
+
+    private var filenameBase: String {
+        let cal = Calendar.current
+        switch option {
+        case .thisWeek, .lastWeek:
+            let offset = option == .lastWeek ? -1 : 0
+            guard let base  = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
+                  let start = cal.date(byAdding: .weekOfYear, value: offset, to: base),
+                  let end   = cal.date(byAdding: .day, value: 6, to: start)
+            else { return option.title.lowercased().replacingOccurrences(of: " ", with: "-") }
+            let sm = cal.component(.month, from: start)
+            let em = cal.component(.month, from: end)
+            let sd = cal.component(.day,   from: start)
+            let ed = cal.component(.day,   from: end)
+            let yr = cal.component(.year,  from: start)
+            let mon = start.formatted(.dateTime.month(.abbreviated)).lowercased()
+            if sm == em {
+                return "\(mon)-\(sd)-\(ed)-\(yr)"
+            }
+            let emon = end.formatted(.dateTime.month(.abbreviated)).lowercased()
+            return "\(mon)-\(sd)-\(emon)-\(ed)-\(yr)"
+        case .thisMonth, .lastMonth:
+            let offset = option == .lastMonth ? -1 : 0
+            guard let base  = cal.dateInterval(of: .month, for: .now)?.start,
+                  let start = cal.date(byAdding: .month, value: offset, to: base)
+            else { return option.title.lowercased().replacingOccurrences(of: " ", with: "-") }
+            let mon = start.formatted(.dateTime.month(.wide)).lowercased()
+            let yr  = cal.component(.year, from: start)
+            return "\(mon)-\(yr)"
+        case .custom:
+            let s = customStart.formatted(.dateTime.month(.abbreviated).day()).lowercased()
+                .replacingOccurrences(of: " ", with: "-")
+            let e = customEnd.formatted(.dateTime.month(.abbreviated).day()).lowercased()
+                .replacingOccurrences(of: " ", with: "-")
+            let yr = Calendar.current.component(.year, from: customEnd)
+            return "\(s)-\(e)-\(yr)"
         }
     }
 
