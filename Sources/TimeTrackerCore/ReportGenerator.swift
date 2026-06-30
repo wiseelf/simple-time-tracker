@@ -4,24 +4,40 @@ public struct ReportRow {
     public let date: Date
     public let regularSeconds: Int
     public let regularAmount: Double?
-    public let onCallMinutes: Int
-    public let onCallAmount: Double?
+    public let passiveOnCallMinutes: Int
+    public let passiveOnCallAmount: Double?
+    public let activeOnCallMinutes: Int
+    public let activeOnCallAmount: Double?
 }
 
 public struct ReportData {
     public let periodLabel: String
     public let rows: [ReportRow]
 
-    public var totalRegularSeconds: Int { rows.reduce(0) { $0 + $1.regularSeconds } }
-    public var totalOnCallMinutes:  Int { rows.reduce(0) { $0 + $1.onCallMinutes } }
+    public var totalRegularSeconds:       Int { rows.reduce(0) { $0 + $1.regularSeconds } }
+    public var totalPassiveOnCallMinutes: Int { rows.reduce(0) { $0 + $1.passiveOnCallMinutes } }
+    public var totalActiveOnCallMinutes:  Int { rows.reduce(0) { $0 + $1.activeOnCallMinutes } }
+    public var totalOnCallMinutes:        Int { totalPassiveOnCallMinutes + totalActiveOnCallMinutes }
 
     public var totalRegularAmount: Double? {
         let vals = rows.compactMap(\.regularAmount)
         return vals.isEmpty ? nil : vals.reduce(0, +)
     }
-    public var totalOnCallAmount: Double? {
-        let vals = rows.compactMap(\.onCallAmount)
+    public var totalPassiveOnCallAmount: Double? {
+        let vals = rows.compactMap(\.passiveOnCallAmount)
         return vals.isEmpty ? nil : vals.reduce(0, +)
+    }
+    public var totalActiveOnCallAmount: Double? {
+        let vals = rows.compactMap(\.activeOnCallAmount)
+        return vals.isEmpty ? nil : vals.reduce(0, +)
+    }
+    public var totalOnCallAmount: Double? {
+        switch (totalPassiveOnCallAmount, totalActiveOnCallAmount) {
+        case (let p?, let a?): return p + a
+        case (let p?, nil):    return p
+        case (nil, let a?):    return a
+        case (nil, nil):       return nil
+        }
     }
     public var grandTotal: Double? {
         switch (totalRegularAmount, totalOnCallAmount) {
@@ -37,14 +53,14 @@ public struct ReportData {
         var out = "# Time Report — \(periodLabel)\n\n"
 
         if showAmounts && includeOnCall {
-            out += "| Date | Hours | Amount | On-call | OC Amount |\n"
-            out += "|------|------:|-------:|--------:|----------:|\n"
+            out += "| Date | Hours | Amount | Passive OC | Passive Amt | Active OC | Active Amt |\n"
+            out += "|------|------:|-------:|-----------:|------------:|----------:|-----------:|\n"
         } else if showAmounts {
             out += "| Date | Hours | Amount |\n"
             out += "|------|------:|-------:|\n"
         } else if includeOnCall {
-            out += "| Date | Hours | On-call |\n"
-            out += "|------|------:|--------:|\n"
+            out += "| Date | Hours | Passive OC | Active OC |\n"
+            out += "|------|------:|-----------:|----------:|\n"
         } else {
             out += "| Date | Hours |\n"
             out += "|------|------:|\n"
@@ -54,16 +70,19 @@ public struct ReportData {
             let d = row.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
             let h = row.regularSeconds > 0 ? fmtSecs(row.regularSeconds) : "—"
             if showAmounts && includeOnCall {
-                let amt   = row.regularAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
-                let oc    = row.onCallMinutes > 0 ? fmtMins(row.onCallMinutes) : "—"
-                let ocAmt = row.onCallAmount.map  { String(format: "%@%.2f", sym, $0) } ?? "—"
-                out += "| \(d) | \(h) | \(amt) | \(oc) | \(ocAmt) |\n"
+                let amt  = row.regularAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
+                let poc  = row.passiveOnCallMinutes > 0 ? fmtMins(row.passiveOnCallMinutes) : "—"
+                let pAmt = row.passiveOnCallAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
+                let aoc  = row.activeOnCallMinutes > 0 ? fmtMins(row.activeOnCallMinutes) : "—"
+                let aAmt = row.activeOnCallAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
+                out += "| \(d) | \(h) | \(amt) | \(poc) | \(pAmt) | \(aoc) | \(aAmt) |\n"
             } else if showAmounts {
                 let amt = row.regularAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
                 out += "| \(d) | \(h) | \(amt) |\n"
             } else if includeOnCall {
-                let oc = row.onCallMinutes > 0 ? fmtMins(row.onCallMinutes) : "—"
-                out += "| \(d) | \(h) | \(oc) |\n"
+                let poc = row.passiveOnCallMinutes > 0 ? fmtMins(row.passiveOnCallMinutes) : "—"
+                let aoc = row.activeOnCallMinutes > 0 ? fmtMins(row.activeOnCallMinutes) : "—"
+                out += "| \(d) | \(h) | \(poc) | \(aoc) |\n"
             } else {
                 out += "| \(d) | \(h) |\n"
             }
@@ -73,24 +92,27 @@ public struct ReportData {
 
         if showAmounts {
             let regAmt = totalRegularAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
-            out += "Regular:   \(fmtSecs(totalRegularSeconds))   \(regAmt)\n"
+            out += "Regular:      \(fmtSecs(totalRegularSeconds))   \(regAmt)\n"
             if includeOnCall {
-                let ocAmt = totalOnCallAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
-                let grand = grandTotal.map        { String(format: "%@%.2f", sym, $0) } ?? "—"
-                out += "On-call:   \(fmtMins(totalOnCallMinutes))    \(ocAmt)\n"
-                out += "Total:                \(grand)\n"
+                let pAmt  = totalPassiveOnCallAmount.map { String(format: "%@%.2f", sym, $0) } ?? "—"
+                let aAmt  = totalActiveOnCallAmount.map  { String(format: "%@%.2f", sym, $0) } ?? "—"
+                let grand = grandTotal.map               { String(format: "%@%.2f", sym, $0) } ?? "—"
+                out += "OC Passive:      \(fmtMins(totalPassiveOnCallMinutes))    \(pAmt)\n"
+                out += "OC Active:       \(fmtMins(totalActiveOnCallMinutes))    \(aAmt)\n"
+                out += "Total:                   \(grand)\n"
             }
         } else {
-            out += "Regular:   \(fmtSecs(totalRegularSeconds))\n"
+            out += "Regular:      \(fmtSecs(totalRegularSeconds))\n"
             if includeOnCall {
-                out += "On-call:   \(fmtMins(totalOnCallMinutes))\n"
+                out += "OC Passive:      \(fmtMins(totalPassiveOnCallMinutes))\n"
+                out += "OC Active:       \(fmtMins(totalActiveOnCallMinutes))\n"
             }
         }
 
         return out
     }
 
-    private func fmtSecs(_ s: Int) -> String { String(format: "%d:%02d", s / 3600, (s % 3600) / 60) }
+    private func fmtSecs(_ s: Int) -> String { String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60) }
     private func fmtMins(_ m: Int) -> String { String(format: "%d:%02d", m / 60, m % 60) }
 }
 
@@ -120,16 +142,17 @@ public enum ReportGenerator {
             let activeMins = OnCallBilling.activeMinutesWithinBillable(
                 on: date, sessions: daySessions,
                 rotations: rotations, rules: rules, exceptions: exceptions, settings: settings)
-            let onCallMins = passiveMins + activeMins
 
-            let onCallAmount = rate.map {
-                Double(passiveMins) / 60.0 * $0 * settings.passiveMultiplier
-                    + Double(activeMins) / 60.0 * $0 * settings.activeMultiplier
-            }
+            let passiveAmount = rate.map { Double(passiveMins) / 60.0 * $0 * settings.passiveMultiplier }
+            let activeAmount  = rate.map { Double(activeMins)  / 60.0 * $0 * settings.activeMultiplier }
 
-            guard regularSecs > 0 || onCallMins > 0 else { return nil }
-            return ReportRow(date: date, regularSeconds: regularSecs, regularAmount: regularAmount,
-                             onCallMinutes: onCallMins, onCallAmount: onCallAmount)
+            guard regularSecs > 0 || passiveMins > 0 || activeMins > 0 else { return nil }
+            return ReportRow(
+                date: date,
+                regularSeconds: regularSecs, regularAmount: regularAmount,
+                passiveOnCallMinutes: passiveMins, passiveOnCallAmount: passiveAmount,
+                activeOnCallMinutes: activeMins, activeOnCallAmount: activeAmount
+            )
         }
         return ReportData(periodLabel: periodLabel, rows: rows)
     }
