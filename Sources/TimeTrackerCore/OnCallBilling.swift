@@ -24,18 +24,18 @@ public enum OnCallBilling {
                                                 exceptions: exceptions, settings: settings)
         guard !billableRanges.isEmpty else { return 0 }
 
-        var total = 0
+        var totalSeconds = 0
         for session in sessions where session.isOnCallActive {
             guard cal.isDate(session.startDate, inSameDayAs: date) else { continue }
-            let sStart = Int(session.startDate.timeIntervalSince(dayStart) / 60)
-            let sEnd   = sStart + session.duration / 60
+            let sStartSec = Int(session.startDate.timeIntervalSince(dayStart))
+            let sEndSec   = sStartSec + session.duration
             for (bStart, bEnd) in billableRanges {
-                let clippedStart = max(sStart, bStart)
-                let clippedEnd   = min(sEnd, bEnd)
-                if clippedEnd > clippedStart { total += clippedEnd - clippedStart }
+                let clippedStart = max(sStartSec, bStart * 60)
+                let clippedEnd   = min(sEndSec,   bEnd   * 60)
+                if clippedEnd > clippedStart { totalSeconds += clippedEnd - clippedStart }
             }
         }
-        return total
+        return totalSeconds / 60
     }
 
     public static func passiveMinutes(on date: Date,
