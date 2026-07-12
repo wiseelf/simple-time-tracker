@@ -240,8 +240,12 @@ struct StatsView: View {
             let regularSecs = sessions.filter { !$0.isOnCallActive }.reduce(0) { $0 + $1.duration }
             result.regular += Double(regularSecs) / 3600.0 * rate
 
-            let passiveMins = OnCallBilling.passiveMinutes(on: day, sessions: sessions, rotations: rotations, settings: settings)
-            let activeMins  = OnCallBilling.activeMinutesWithinBillable(on: day, sessions: sessions, rotations: rotations, settings: settings)
+            let passiveMins = OnCallBilling.passiveMinutes(on: day, sessions: sessions, rotations: rotations,
+                                                           rules: onCallStore.rules, exceptions: onCallStore.exceptions,
+                                                           settings: settings)
+            let activeMins  = OnCallBilling.activeMinutesWithinBillable(on: day, sessions: sessions, rotations: rotations,
+                                                                        rules: onCallStore.rules, exceptions: onCallStore.exceptions,
+                                                                        settings: settings)
             result.onCall += (Double(passiveMins) / 60.0 * rate * settings.passiveMultiplier)
                            + (Double(activeMins) / 60.0 * rate * settings.activeMultiplier)
         }
