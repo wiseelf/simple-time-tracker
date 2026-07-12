@@ -19,6 +19,7 @@ A lightweight native macOS menu bar app for tracking time. No Dock icon, no back
 - **Period report** — export a Markdown report for the current week or month with daily tracked hours, on-call hours, and calculated amounts (regular and on-call separately), plus period totals and grand total; saved as a `.md` file via `NSSavePanel`
 - **Export / Import** — back up all sessions to a JSON file and restore (merge or replace) on any machine
 - **System notifications** — notified when the timer starts, stops, or is auto-stopped
+- **Hide from screen recordings** — excludes the popover from screenshots, screen recordings, and screen shares (Zoom/Meet/Teams/QuickTime); toggle in Settings (enabled by default)
 - **Right-click menu** — right-click the menu bar icon to access About and Quit without opening the main panel
 - **App icon** — custom clock-face icon; green (running), orange (paused), default (idle)
 - **About window** — shows app icon, version, description, and author info
