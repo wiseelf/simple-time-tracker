@@ -61,6 +61,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateButton() }
             .store(in: &cancellables)
+
+        OnCallStore.shared.$settings
+            .map(\.hideFromScreenCapture)
+            .removeDuplicates()
+            .sink { [weak self] hideFromScreenCapture in
+                self?.panel?.sharingType = hideFromScreenCapture ? .none : .readOnly
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Status bar button
@@ -225,6 +233,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         newPanel.hasShadow = true
         newPanel.level = .popUpMenu
         newPanel.animationBehavior = .utilityWindow
+        newPanel.sharingType = OnCallStore.shared.settings.hideFromScreenCapture ? .none : .readOnly
 
         // Frosted-glass background with rounded corners
         let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight))
