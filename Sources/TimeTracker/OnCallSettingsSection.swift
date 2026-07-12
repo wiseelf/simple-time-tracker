@@ -14,6 +14,18 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Toggle("Hide from screen recordings", isOn: Binding(
+                get: { store.settings.hideFromScreenCapture },
+                set: { store.updateSettings(store.settings.with(hideFromScreenCapture: $0)) }
+            ))
+            .toggleStyle(.switch)
+            .font(.system(size: 12))
+            Text("Keeps this window out of screenshots, screen recordings, and screen shares.")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+
+            Divider()
+
             Toggle("Week starts on Monday", isOn: Binding(
                 get: { store.settings.weekStartsOnMonday },
                 set: { v in var s = store.settings; s.weekStartsOnMonday = v; store.updateSettings(s) }
@@ -379,7 +391,8 @@ private extension OnCallSettings {
                        nonBillableRules: nonBillableRules,
                        rateHistory: rateHistory,
                        currencySymbol: currencySymbol,
-                       weekStartsOnMonday: weekStartsOnMonday)
+                       weekStartsOnMonday: weekStartsOnMonday,
+                       hideFromScreenCapture: hideFromScreenCapture)
     }
     func with(passiveMultiplier: Double) -> OnCallSettings {
         OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
@@ -388,7 +401,8 @@ private extension OnCallSettings {
                        nonBillableRules: nonBillableRules,
                        rateHistory: rateHistory,
                        currencySymbol: currencySymbol,
-                       weekStartsOnMonday: weekStartsOnMonday)
+                       weekStartsOnMonday: weekStartsOnMonday,
+                       hideFromScreenCapture: hideFromScreenCapture)
     }
     func with(activeMultiplier: Double) -> OnCallSettings {
         OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
@@ -397,7 +411,8 @@ private extension OnCallSettings {
                        nonBillableRules: nonBillableRules,
                        rateHistory: rateHistory,
                        currencySymbol: currencySymbol,
-                       weekStartsOnMonday: weekStartsOnMonday)
+                       weekStartsOnMonday: weekStartsOnMonday,
+                       hideFromScreenCapture: hideFromScreenCapture)
     }
     func with(currencySymbol: String) -> OnCallSettings {
         OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
@@ -406,6 +421,17 @@ private extension OnCallSettings {
                        nonBillableRules: nonBillableRules,
                        rateHistory: rateHistory,
                        currencySymbol: currencySymbol,
-                       weekStartsOnMonday: weekStartsOnMonday)
+                       weekStartsOnMonday: weekStartsOnMonday,
+                       hideFromScreenCapture: hideFromScreenCapture)
+    }
+    func with(hideFromScreenCapture: Bool) -> OnCallSettings {
+        OnCallSettings(incomeTrackingEnabled: incomeTrackingEnabled,
+                       passiveMultiplier: passiveMultiplier,
+                       activeMultiplier: activeMultiplier,
+                       nonBillableRules: nonBillableRules,
+                       rateHistory: rateHistory,
+                       currencySymbol: currencySymbol,
+                       weekStartsOnMonday: weekStartsOnMonday,
+                       hideFromScreenCapture: hideFromScreenCapture)
     }
 }

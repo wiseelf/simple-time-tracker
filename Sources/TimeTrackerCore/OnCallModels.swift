@@ -62,6 +62,7 @@ public struct OnCallSettings: Codable {
     public var rateHistory: [RateEntry]   // sorted by effectiveFrom ascending
     public var currencySymbol: String      // default "$"
     public var weekStartsOnMonday: Bool    // default false (Sunday-first)
+    public var hideFromScreenCapture: Bool // default true (exclude popover from screenshots/recordings)
 
     public var orderedWeekdays: [(Int, String)] {
         weekStartsOnMonday
@@ -75,7 +76,8 @@ public struct OnCallSettings: Codable {
                 nonBillableRules: [NonBillableRule] = [],
                 rateHistory: [RateEntry] = [],
                 currencySymbol: String = "$",
-                weekStartsOnMonday: Bool = false) {
+                weekStartsOnMonday: Bool = false,
+                hideFromScreenCapture: Bool = true) {
         self.incomeTrackingEnabled = incomeTrackingEnabled
         self.passiveMultiplier = passiveMultiplier
         self.activeMultiplier = activeMultiplier
@@ -83,6 +85,7 @@ public struct OnCallSettings: Codable {
         self.rateHistory = rateHistory
         self.currencySymbol = currencySymbol
         self.weekStartsOnMonday = weekStartsOnMonday
+        self.hideFromScreenCapture = hideFromScreenCapture
     }
 
     public init(from decoder: Decoder) throws {
@@ -94,5 +97,6 @@ public struct OnCallSettings: Codable {
         rateHistory           = try c.decode([RateEntry].self, forKey: .rateHistory)
         currencySymbol        = try c.decodeIfPresent(String.self, forKey: .currencySymbol) ?? "$"
         weekStartsOnMonday    = try c.decodeIfPresent(Bool.self, forKey: .weekStartsOnMonday) ?? false
+        hideFromScreenCapture = try c.decodeIfPresent(Bool.self, forKey: .hideFromScreenCapture) ?? true
     }
 }
