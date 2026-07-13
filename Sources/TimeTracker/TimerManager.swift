@@ -54,6 +54,7 @@ class TimerManager: ObservableObject {
         isRunning = false
         timer?.invalidate()
         timer = nil
+        TimerCheckpointStore.clear()
         startDate = nil
         segmentStartDate = nil
         pendingNote = ""
