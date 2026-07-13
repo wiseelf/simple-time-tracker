@@ -377,6 +377,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             : "Mac went to sleep"
         TimerManager.shared.stop(reason: reason)
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        TimerManager.shared.stop(reason: "App quit")
+    }
 }
 
 // MARK: - UNUserNotificationCenterDelegate
