@@ -13,6 +13,7 @@ A lightweight native macOS menu bar app for tracking time. No Dock icon, no back
 - **Auto-stop on sleep / screensaver** — timer stops automatically when the Mac sleeps or the screensaver activates; a system notification is sent
 - **Automatic day reset** — at midnight the timer resets to `00:00:00`; if it was running, the previous day's session is saved and the timer restarts fresh for the new day
 - **Persistent sessions** — time is saved automatically; today's total is restored on relaunch
+- **Crash recovery** — if the app quits unexpectedly (crash, force-kill), the running segment is checkpointed every 60 seconds and recovered on next launch, bounding data loss to under a minute; a notification confirms what was recovered
 - **Statistics** — bar chart per day (week view) or per calendar week (month view), with period total and daily average; on-call active sessions shown as orange overlay; optional income footer
 - **On-call billing** — define rotation blocks with per-day-of-week schedules; global non-billable window; passive on-call derived automatically; click "On-call" while running to split into an active on-call segment; configurable passive/active rate multipliers; optional income tracking with rate history
 - **Recurrence rules** — define a recurring on-call rotation (every N days or specific days of the week) with a default time window; the app pre-fills a month calendar grid with on-call days; tap any day to skip it, add an exception, or override its hours; all exception edits persist and feed directly into billing summaries
