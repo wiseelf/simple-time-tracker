@@ -32,6 +32,7 @@ class TimerManager: ObservableObject {
     private var accumulatedSeconds: Int = 0
     private var savedSeconds: Int = 0
     private var nextSessionIsOnCall: Bool = false
+    private var ticksSinceCheckpoint: Int = 0
 
     var formattedTime: String {
         formatted(elapsedSeconds)
@@ -76,6 +77,7 @@ class TimerManager: ObservableObject {
     /// Called once on launch to seed the timer with today's already-tracked time.
     func loadTodayTime() {
         observeDayChange()
+        recoverCheckpointIfNeeded()
         let total = SessionStore.shared.totalSeconds(in: SessionStore.shared.sessions(on: .now))
         guard total > 0 else { return }
         elapsedSeconds = total
@@ -110,9 +112,16 @@ class TimerManager: ObservableObject {
         nextSessionIsOnCall = false
         segmentStartDate = Date()
         startDate = Date()
+        ticksSinceCheckpoint = 0
+        writeCheckpoint()
         timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self, let start = self.startDate else { return }
             self.elapsedSeconds = self.accumulatedSeconds + Int(Date().timeIntervalSince(start))
+            self.ticksSinceCheckpoint += 1
+            if self.ticksSinceCheckpoint >= 60 {
+                self.ticksSinceCheckpoint = 0
+                self.writeCheckpoint()
+            }
         }
         RunLoop.main.add(timer!, forMode: .common)
         notify(title: "Timer started", body: "Tracking time…")
@@ -123,6 +132,7 @@ class TimerManager: ObservableObject {
         isRunning = false
         timer?.invalidate()
         timer = nil
+        TimerCheckpointStore.clear()
         accumulatedSeconds = elapsedSeconds
         startDate = nil
 
@@ -176,6 +186,33 @@ class TimerManager: ObservableObject {
             task.arguments  = ["-e", "display notification \"\(safeBody)\" with title \"\(safeTitle)\""]
             try? task.run()
         }
+    }
+
+    // MARK: - Checkpoint (crash / force-kill recovery)
+
+    private func writeCheckpoint() {
+        let duration = elapsedSeconds - savedSeconds
+        guard duration > 0, let seg = segmentStartDate else { return }
+        TimerCheckpointStore.save(TimerCheckpoint(
+            segmentStartDate: seg,
+            duration: duration,
+            isOnCallActive: isRunningOnCall,
+            note: pendingNote.trimmedOrNil
+        ))
+    }
+
+    /// Recovers a segment left behind by an ungraceful termination (crash / force-kill).
+    /// A leftover checkpoint means the previous run ended without calling `stop()`.
+    private func recoverCheckpointIfNeeded() {
+        guard let checkpoint = TimerCheckpointStore.loadAndClear(), checkpoint.duration > 0 else { return }
+        SessionStore.shared.record(TimeSession(
+            startDate: checkpoint.segmentStartDate,
+            duration: checkpoint.duration,
+            note: checkpoint.note,
+            isOnCallActive: checkpoint.isOnCallActive
+        ))
+        notify(title: "Recovered interrupted session",
+               body: "Recovered \(formatDuration(checkpoint.duration)) from before the app quit unexpectedly.")
     }
 
     func reset() {
