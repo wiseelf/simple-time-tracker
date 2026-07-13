@@ -192,7 +192,7 @@ class TimerManager: ObservableObject {
 
     private func writeCheckpoint() {
         let duration = elapsedSeconds - savedSeconds
-        guard duration > 0, let seg = segmentStartDate else { return }
+        guard duration >= 0, let seg = segmentStartDate else { return }
         TimerCheckpointStore.save(TimerCheckpoint(
             segmentStartDate: seg,
             duration: duration,
