@@ -9,6 +9,7 @@ private final class KeyablePanel: NSPanel {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private let panelWidth: CGFloat = 260
     private var statusItem: NSStatusItem!
     private var panel: KeyablePanel?
     private var panelAnchorTop: CGFloat = 0
@@ -66,7 +67,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .map(\.hideFromScreenCapture)
             .removeDuplicates()
             .sink { [weak self] hideFromScreenCapture in
-                self?.panel?.sharingType = hideFromScreenCapture ? .none : .readOnly
+                let sharing: NSWindow.SharingType = hideFromScreenCapture ? .none : .readOnly
+                self?.panel?.sharingType = sharing
+                self?.detailPanel?.sharingType = sharing
             }
             .store(in: &cancellables)
     }
@@ -204,11 +207,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Panel
 
+    /// Builds a borderless, frosted-glass `KeyablePanel` with the app's shared panel chrome
+    /// (backing, corner radius, shadow, level, sharing-type) around `contentView`, positioned
+    /// with its top-left corner at `topLeft`. Callers own their own panel-specific behavior
+    /// (key/activation, event monitors, storage) — this only builds the shell both panels share,
+    /// so properties like `sharingType` can't drift between them.
+    private func makePanel(contentView: NSView, width: CGFloat, height: CGFloat, topLeft: NSPoint) -> KeyablePanel {
+        let newPanel = KeyablePanel(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        newPanel.isOpaque = false
+        newPanel.backgroundColor = .clear
+        newPanel.hasShadow = true
+        newPanel.level = .popUpMenu
+        newPanel.animationBehavior = .utilityWindow
+        newPanel.sharingType = OnCallStore.shared.settings.hideFromScreenCapture ? .none : .readOnly
+
+        // Frosted-glass background with rounded corners
+        let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        effect.material = .popover
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = 12
+        effect.layer?.masksToBounds = true
+
+        contentView.frame = effect.bounds
+        contentView.autoresizingMask = [.width, .height]
+        effect.addSubview(contentView)
+        newPanel.contentView = effect
+
+        newPanel.setFrameTopLeftPoint(topLeft)
+        return newPanel
+    }
+
     private func openPanel() {
         guard let button = statusItem.button,
               let buttonWindow = button.window else { return }
-
-        let panelWidth: CGFloat = 260
 
         let hc = NSHostingController(
             rootView: ContentView(onResize: { [weak self] height in
@@ -222,40 +260,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let idealSize = hc.sizeThatFits(in: NSSize(width: panelWidth, height: 10_000))
         let panelHeight = max(200, min(idealSize.height, availableHeight))
 
-        let newPanel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        newPanel.isOpaque = false
-        newPanel.backgroundColor = .clear
-        newPanel.hasShadow = true
-        newPanel.level = .popUpMenu
-        newPanel.animationBehavior = .utilityWindow
-        newPanel.sharingType = OnCallStore.shared.settings.hideFromScreenCapture ? .none : .readOnly
-
-        // Frosted-glass background with rounded corners
-        let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight))
-        effect.material = .popover
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 12
-        effect.layer?.masksToBounds = true
-
-        hc.view.frame = effect.bounds
-        hc.view.autoresizingMask = [.width, .height]
-        effect.addSubview(hc.view)
-        newPanel.contentView = effect
-
         // Position: flush below the menu bar button, horizontally centered on it
         let btnInWindow = button.convert(button.bounds, to: nil)
         let btnOnScreen = buttonWindow.convertToScreen(btnInWindow)
         let anchorX = (btnOnScreen.midX - panelWidth / 2).rounded()
         let anchorTop = btnOnScreen.minY - 6
         panelAnchorTop = anchorTop
-        newPanel.setFrameTopLeftPoint(NSPoint(x: anchorX, y: anchorTop))
+
+        let newPanel = makePanel(contentView: hc.view, width: panelWidth, height: panelHeight,
+                                 topLeft: NSPoint(x: anchorX, y: anchorTop))
 
         newPanel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -318,7 +331,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // If already open, just update the date — no need to recreate the panel
         if detailPanel != nil { return }
 
-        let panelWidth: CGFloat = 260
         let hc = NSHostingController(
             rootView: SessionDetailView()
                 .environmentObject(TimerManager.shared)
@@ -329,35 +341,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let maxH = panel?.frame.height ?? 500
         let panelHeight = max(120, min(idealSize.height, maxH))
 
-        let p = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        p.isOpaque = false
-        p.backgroundColor = .clear
-        p.hasShadow = true
-        p.level = .popUpMenu
-        p.animationBehavior = .utilityWindow
-
-        let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight))
-        effect.material = .popover
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 12
-        effect.layer?.masksToBounds = true
-
-        hc.view.frame = effect.bounds
-        hc.view.autoresizingMask = [.width, .height]
-        effect.addSubview(hc.view)
-        p.contentView = effect
-
         // Align top edge with the main panel
         let anchorX = (panel?.frame.maxX ?? 0) + 8
         let anchorY = panelAnchorTop
-        p.setFrameTopLeftPoint(NSPoint(x: anchorX, y: anchorY))
+
+        let p = makePanel(contentView: hc.view, width: panelWidth, height: panelHeight,
+                          topLeft: NSPoint(x: anchorX, y: anchorY))
 
         // Don't steal key focus from the main panel
         p.orderFront(nil)
