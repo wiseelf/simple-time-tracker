@@ -16,3 +16,4 @@
 - **Import JSON** — use `JSONDecoder` with `.iso8601` date strategy to match the encoder.
 - **`note` on `TimeSession`** — optional in JSON; trim and nil-coalesce before calling `SessionStore.update(_:startDate:duration:note:)`. Never pass an empty string.
 - **osascript notifications** — use `tell application "System Events" to display notification …` (not bare `display notification`) so the "Show" button doesn't open Script Editor.
+- **Date-only `DatePicker` values carry a real time-of-day** — `displayedComponents: .date` only controls what's shown; the underlying `Date` keeps whatever time-of-day it already had (typically `.now`'s wall-clock time from the initial `@State`). Never compare such a date against another Date instant directly (e.g. a period boundary at midnight) — normalize both sides with `Calendar.startOfDay(for:)` first, or the comparison will silently exclude values that land on the boundary day.
