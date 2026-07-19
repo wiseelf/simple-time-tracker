@@ -64,6 +64,17 @@ class TimerManager: ObservableObject {
         savedSeconds = total
     }
 
+    /// Stops the timer (saving any in-progress segment) if running, applies an external
+    /// mutation to session storage, then resyncs all counters from the store. Use this for
+    /// any mutation that happens outside TimerManager's own recording (backup import,
+    /// replace-all) so the stop → mutate → reload ordering can't be gotten wrong by a
+    /// future caller.
+    func resyncAfterExternalMutation(_ apply: () -> Void) {
+        if isRunning { stop() }
+        apply()
+        reloadFromStore()
+    }
+
     /// Resyncs elapsed/accumulated/saved counters from today's stored sessions without stopping the timer.
     /// Call this after a session edit or delete.
     func resyncFromStore() {
