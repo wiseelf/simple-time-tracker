@@ -92,6 +92,7 @@ simple-time-tracker/
 │       └── Assets.xcassets/            # App icon asset catalog
 └── Tests/TimeTrackerTests/
     ├── OnCallBillingTests.swift         # Swift Testing tests for core billing logic
+    ├── OnCallRotationBlockTests.swift   # Tests for rotation/period calendar-day overlap
     ├── PeriodRangeTests.swift           # Tests for week/month date-range computation
     ├── RecurrenceRuleTests.swift        # Tests for RecurrenceRule day-generation and exceptions
     └── RecurrenceBillingTests.swift     # Tests for billing with recurrence rules

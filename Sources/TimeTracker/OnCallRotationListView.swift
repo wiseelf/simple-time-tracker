@@ -10,7 +10,7 @@ struct OnCallRotationListView: View {
 
     private var visibleRotations: [OnCallRotationBlock] {
         guard let s = filterStart, let e = filterEnd else { return store.rotations }
-        return store.rotations.filter { $0.startDate <= e && $0.endDate >= s }
+        return store.rotations.filter { $0.overlaps(periodStart: s, periodEnd: e) }
     }
 
     var body: some View {

@@ -26,6 +26,17 @@ public struct OnCallRotationBlock: Codable, Identifiable {
         self.endDate = endDate
         self.schedules = schedules
     }
+
+    /// True if this rotation's calendar-day range overlaps [periodStart, periodEnd].
+    /// Compares by calendar day rather than raw instant: `startDate`/`endDate` are picked
+    /// via a date-only `DatePicker` that preserves whatever time-of-day was already on the
+    /// value (typically `.now`'s wall-clock time, not midnight), so a raw `Date` comparison
+    /// against a period boundary that's midnight of its last day would wrongly exclude a
+    /// rotation that lands on that exact day.
+    public func overlaps(periodStart: Date, periodEnd: Date, calendar: Calendar = .current) -> Bool {
+        calendar.startOfDay(for: startDate) <= calendar.startOfDay(for: periodEnd)
+            && calendar.startOfDay(for: endDate) >= calendar.startOfDay(for: periodStart)
+    }
 }
 
 public struct NonBillableRule: Codable, Identifiable {
