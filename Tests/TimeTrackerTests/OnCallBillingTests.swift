@@ -180,4 +180,28 @@ struct OnCallBillingTests {
         #expect(OnCallBilling.rate(on: date(2026, 6, 2), settings: settings) == 100)
         #expect(OnCallBilling.rate(on: date(2026, 3, 31), settings: settings) == 50)
     }
+
+    // MARK: - Income
+
+    @Test func regularIncome_computesHourlyAmount() {
+        #expect(OnCallBilling.regularIncome(seconds: 3600, rate: 50) == 50)
+        #expect(OnCallBilling.regularIncome(seconds: 1800, rate: 50) == 25)
+    }
+
+    @Test func passiveIncome_appliesPassiveMultiplier() {
+        let settings = OnCallSettings(passiveMultiplier: 0.4)
+        #expect(OnCallBilling.passiveIncome(minutes: 60, rate: 100, settings: settings) == 40)
+    }
+
+    @Test func activeIncome_appliesActiveMultiplier() {
+        let settings = OnCallSettings(activeMultiplier: 1.0)
+        #expect(OnCallBilling.activeIncome(minutes: 60, rate: 100, settings: settings) == 100)
+    }
+
+    @Test func onCallIncome_sumsPassiveAndActive() {
+        let settings = OnCallSettings(passiveMultiplier: 0.4, activeMultiplier: 1.0)
+        let income = OnCallBilling.onCallIncome(passiveMinutes: 60, activeMinutes: 30, rate: 100, settings: settings)
+        // passive: 60/60 * 100 * 0.4 = 40; active: 30/60 * 100 * 1.0 = 50
+        #expect(income == 90)
+    }
 }

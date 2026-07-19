@@ -25,7 +25,7 @@ struct ReportPickerSheet: View {
     init(defaultOption: Option = .thisWeek, onExport: @escaping ([Date], String, String, Bool) -> Void) {
         self.onExport = onExport
         let cal = Calendar.current
-        let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start ?? .now
+        let weekStart = PeriodRange.interval(for: .week, offset: 0)?.start ?? .now
         _option      = State(initialValue: defaultOption)
         _customStart = State(initialValue: weekStart)
         _customEnd   = State(initialValue: cal.date(byAdding: .day, value: 6, to: weekStart) ?? .now)
@@ -68,22 +68,13 @@ struct ReportPickerSheet: View {
     }
 
     private var dates: [Date] {
-        let cal = Calendar.current
         switch option {
         case .thisWeek, .lastWeek:
-            let offset = option == .lastWeek ? -1 : 0
-            guard let base  = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-                  let start = cal.date(byAdding: .weekOfYear, value: offset, to: base)
-            else { return [] }
-            return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
+            return PeriodRange.days(for: .week, offset: option == .lastWeek ? -1 : 0)
         case .thisMonth, .lastMonth:
-            let offset = option == .lastMonth ? -1 : 0
-            guard let base  = cal.dateInterval(of: .month, for: .now)?.start,
-                  let start = cal.date(byAdding: .month, value: offset, to: base),
-                  let end   = cal.date(byAdding: .month, value: 1, to: start)
-            else { return [] }
-            return stride(from: start, to: end, by: 86400).map { $0 }
+            return PeriodRange.days(for: .month, offset: option == .lastMonth ? -1 : 0)
         case .custom:
+            let cal = Calendar.current
             let start = cal.startOfDay(for: customStart)
             let end   = cal.startOfDay(for: customEnd)
             return stride(from: start, through: end, by: 86400).map { $0 }
@@ -95,15 +86,13 @@ struct ReportPickerSheet: View {
         switch option {
         case .thisWeek, .lastWeek:
             let offset = option == .lastWeek ? -1 : 0
-            guard let base  = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-                  let start = cal.date(byAdding: .weekOfYear, value: offset, to: base),
+            guard let start = PeriodRange.interval(for: .week, offset: offset)?.start,
                   let end   = cal.date(byAdding: .day, value: 6, to: start)
             else { return option.title }
             return weekRangeLabel(start: start, end: end, cal: cal)
         case .thisMonth, .lastMonth:
             let offset = option == .lastMonth ? -1 : 0
-            guard let base  = cal.dateInterval(of: .month, for: .now)?.start,
-                  let start = cal.date(byAdding: .month, value: offset, to: base)
+            guard let start = PeriodRange.interval(for: .month, offset: offset)?.start
             else { return option.title }
             return start.formatted(.dateTime.month(.wide).year())
         case .custom:
@@ -118,8 +107,7 @@ struct ReportPickerSheet: View {
         switch option {
         case .thisWeek, .lastWeek:
             let offset = option == .lastWeek ? -1 : 0
-            guard let base  = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-                  let start = cal.date(byAdding: .weekOfYear, value: offset, to: base),
+            guard let start = PeriodRange.interval(for: .week, offset: offset)?.start,
                   let end   = cal.date(byAdding: .day, value: 6, to: start)
             else { return option.title.lowercased().replacingOccurrences(of: " ", with: "-") }
             let sm = cal.component(.month, from: start)
@@ -135,8 +123,7 @@ struct ReportPickerSheet: View {
             return "\(mon)-\(sd)-\(emon)-\(ed)-\(yr)"
         case .thisMonth, .lastMonth:
             let offset = option == .lastMonth ? -1 : 0
-            guard let base  = cal.dateInterval(of: .month, for: .now)?.start,
-                  let start = cal.date(byAdding: .month, value: offset, to: base)
+            guard let start = PeriodRange.interval(for: .month, offset: offset)?.start
             else { return option.title.lowercased().replacingOccurrences(of: " ", with: "-") }
             let mon = start.formatted(.dateTime.month(.wide)).lowercased()
             let yr  = cal.component(.year, from: start)

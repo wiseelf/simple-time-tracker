@@ -61,6 +61,26 @@ public enum OnCallBilling {
             .rate
     }
 
+    // MARK: - Income
+
+    public static func regularIncome(seconds: Int, rate: Double) -> Double {
+        Double(seconds) / 3600.0 * rate
+    }
+
+    public static func passiveIncome(minutes: Int, rate: Double, settings: OnCallSettings) -> Double {
+        Double(minutes) / 60.0 * rate * settings.passiveMultiplier
+    }
+
+    public static func activeIncome(minutes: Int, rate: Double, settings: OnCallSettings) -> Double {
+        Double(minutes) / 60.0 * rate * settings.activeMultiplier
+    }
+
+    public static func onCallIncome(passiveMinutes: Int, activeMinutes: Int,
+                                     rate: Double, settings: OnCallSettings) -> Double {
+        passiveIncome(minutes: passiveMinutes, rate: rate, settings: settings)
+            + activeIncome(minutes: activeMinutes, rate: rate, settings: settings)
+    }
+
     // MARK: - Internal helpers (internal for tests)
 
     static func billableRangesList(on date: Date,

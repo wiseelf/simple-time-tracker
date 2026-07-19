@@ -59,21 +59,13 @@ class SessionStore: ObservableObject {
     }
 
     func sessions(weekOffset: Int) -> [TimeSession] {
-        let cal = Calendar.current
-        guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-              let start = cal.date(byAdding: .weekOfYear, value: weekOffset, to: weekStart),
-              let end   = cal.date(byAdding: .weekOfYear, value: 1, to: start)
-        else { return [] }
-        return sessions.filter { $0.startDate >= start && $0.startDate < end }
+        guard let interval = PeriodRange.interval(for: .week, offset: weekOffset) else { return [] }
+        return sessions.filter { $0.startDate >= interval.start && $0.startDate < interval.end }
     }
 
     func sessions(monthOffset: Int) -> [TimeSession] {
-        let cal = Calendar.current
-        guard let monthStart = cal.dateInterval(of: .month, for: .now)?.start,
-              let start = cal.date(byAdding: .month, value: monthOffset, to: monthStart),
-              let end   = cal.date(byAdding: .month, value: 1, to: start)
-        else { return [] }
-        return sessions.filter { $0.startDate >= start && $0.startDate < end }
+        guard let interval = PeriodRange.interval(for: .month, offset: monthOffset) else { return [] }
+        return sessions.filter { $0.startDate >= interval.start && $0.startDate < interval.end }
     }
 
     // MARK: - Overlap & slot helpers

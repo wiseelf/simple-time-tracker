@@ -90,4 +90,25 @@ struct RecurrenceRuleTests {
         let w = rule.resolvedWindow(on: date(2026, 6, 1), exceptions: [])
         #expect(w?.0 == 0 && w?.1 == 480)
     }
+
+    // MARK: - ScheduleException.isOwned(by:)
+
+    @Test func isOwned_matchingRuleID_returnsTrue() {
+        let rule = RecurrenceRule(kind: .dayOfWeek(daysOfWeek: [2]), anchorDate: date(2026, 6, 1))
+        let exc = ScheduleException(date: date(2026, 6, 1), kind: .skip, ruleID: rule.id)
+        #expect(exc.isOwned(by: rule))
+    }
+
+    @Test func isOwned_differentRuleID_returnsFalse() {
+        let rule = RecurrenceRule(kind: .dayOfWeek(daysOfWeek: [2]), anchorDate: date(2026, 6, 1))
+        let otherRule = RecurrenceRule(kind: .dayOfWeek(daysOfWeek: [2]), anchorDate: date(2026, 6, 1))
+        let exc = ScheduleException(date: date(2026, 6, 1), kind: .skip, ruleID: otherRule.id)
+        #expect(!exc.isOwned(by: rule))
+    }
+
+    @Test func isOwned_nilRuleID_treatedAsLegacyAndOwned() {
+        let rule = RecurrenceRule(kind: .dayOfWeek(daysOfWeek: [2]), anchorDate: date(2026, 6, 1))
+        let exc = ScheduleException(date: date(2026, 6, 1), kind: .skip)
+        #expect(exc.isOwned(by: rule))
+    }
 }
