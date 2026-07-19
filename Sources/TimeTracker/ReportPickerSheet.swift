@@ -16,6 +16,7 @@ struct ReportPickerSheet: View {
         }
     }
 
+    @ObservedObject private var onCallStore = OnCallStore.shared
     @State private var option: Option
     @State private var customStart: Date
     @State private var customEnd: Date
@@ -24,8 +25,8 @@ struct ReportPickerSheet: View {
 
     init(defaultOption: Option = .thisWeek, onExport: @escaping ([Date], String, String, Bool) -> Void) {
         self.onExport = onExport
-        let cal = Calendar.current
-        let weekStart = PeriodRange.interval(for: .week, offset: 0)?.start ?? .now
+        let cal = OnCallStore.shared.settings.calendar
+        let weekStart = PeriodRange.interval(for: .week, offset: 0, calendar: cal)?.start ?? .now
         _option      = State(initialValue: defaultOption)
         _customStart = State(initialValue: weekStart)
         _customEnd   = State(initialValue: cal.date(byAdding: .day, value: 6, to: weekStart) ?? .now)
@@ -70,7 +71,7 @@ struct ReportPickerSheet: View {
     private var dates: [Date] {
         switch option {
         case .thisWeek, .lastWeek:
-            return PeriodRange.days(for: .week, offset: option == .lastWeek ? -1 : 0)
+            return PeriodRange.days(for: .week, offset: option == .lastWeek ? -1 : 0, calendar: onCallStore.settings.calendar)
         case .thisMonth, .lastMonth:
             return PeriodRange.days(for: .month, offset: option == .lastMonth ? -1 : 0)
         case .custom:
@@ -82,11 +83,11 @@ struct ReportPickerSheet: View {
     }
 
     private var label: String {
-        let cal = Calendar.current
+        let cal = onCallStore.settings.calendar
         switch option {
         case .thisWeek, .lastWeek:
             let offset = option == .lastWeek ? -1 : 0
-            guard let start = PeriodRange.interval(for: .week, offset: offset)?.start,
+            guard let start = PeriodRange.interval(for: .week, offset: offset, calendar: cal)?.start,
                   let end   = cal.date(byAdding: .day, value: 6, to: start)
             else { return option.title }
             return weekRangeLabel(start: start, end: end, cal: cal)
@@ -103,11 +104,11 @@ struct ReportPickerSheet: View {
     }
 
     private var filenameBase: String {
-        let cal = Calendar.current
+        let cal = onCallStore.settings.calendar
         switch option {
         case .thisWeek, .lastWeek:
             let offset = option == .lastWeek ? -1 : 0
-            guard let start = PeriodRange.interval(for: .week, offset: offset)?.start,
+            guard let start = PeriodRange.interval(for: .week, offset: offset, calendar: cal)?.start,
                   let end   = cal.date(byAdding: .day, value: 6, to: start)
             else { return option.title.lowercased().replacingOccurrences(of: " ", with: "-") }
             let sm = cal.component(.month, from: start)

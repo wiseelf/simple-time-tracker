@@ -81,6 +81,15 @@ public struct OnCallSettings: Codable {
             : [(1,"Su"),(2,"M"),(3,"Tu"),(4,"W"),(5,"Th"),(6,"F"),(7,"Sa")]
     }
 
+    /// `Calendar.current` with `firstWeekday` set from `weekStartsOnMonday`, so week-range
+    /// computations (`PeriodRange`, `SessionStore.sessions(weekOffset:)`, etc.) respect the
+    /// user's preference instead of falling back to the system locale's first weekday.
+    public var calendar: Calendar {
+        var cal = Calendar.current
+        cal.firstWeekday = weekStartsOnMonday ? 2 : 1
+        return cal
+    }
+
     public init(incomeTrackingEnabled: Bool = false,
                 passiveMultiplier: Double = 0.4,
                 activeMultiplier: Double = 1.0,

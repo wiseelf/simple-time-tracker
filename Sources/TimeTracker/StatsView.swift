@@ -106,11 +106,11 @@ struct StatsView: View {
                            maxSeconds: maxMonthSeconds, highlight: false, labelWidth: 38)
                         .onTapGesture {
                             guard row.seconds > 0 else { return }
-                            let cal = Calendar.current
+                            let cal = onCallStore.settings.calendar
                             // Use the midpoint of the segment (day+3) so edge days that
                             // belong to a neighbouring calendar week don't mislead us
                             let mid = cal.date(byAdding: .day, value: 3, to: row.id) ?? row.id
-                            guard let thisWeekStart = PeriodRange.interval(for: .week, offset: 0)?.start,
+                            guard let thisWeekStart = PeriodRange.interval(for: .week, offset: 0, calendar: cal)?.start,
                                   let rowWeekStart  = cal.dateInterval(of: .weekOfYear, for: mid)?.start
                             else { return }
                             let days = cal.dateComponents([.day], from: thisWeekStart, to: rowWeekStart).day ?? 0
@@ -216,7 +216,8 @@ struct StatsView: View {
         guard settings.incomeTrackingEnabled else { return PeriodIncome() }
 
         let dates = PeriodRange.days(for: period == .week ? .week : .month,
-                                     offset: period == .week ? weekOffset : monthOffset)
+                                     offset: period == .week ? weekOffset : monthOffset,
+                                     calendar: settings.calendar)
         guard !dates.isEmpty else { return PeriodIncome() }
 
         var result = PeriodIncome()
@@ -275,8 +276,8 @@ struct StatsView: View {
     }
 
     private var weekRows: [DayRow] {
-        let cal = Calendar.current
-        guard let start = PeriodRange.interval(for: .week, offset: weekOffset)?.start else { return [] }
+        let cal = onCallStore.settings.calendar
+        guard let start = PeriodRange.interval(for: .week, offset: weekOffset, calendar: cal)?.start else { return [] }
         return (0..<7).compactMap { i in
             guard let day = cal.date(byAdding: .day, value: i, to: start) else { return nil }
             let daySessions = store.sessions(on: day)
@@ -346,8 +347,8 @@ struct StatsView: View {
     }
 
     private func weekLabel(_ offset: Int) -> String {
-        let cal = Calendar.current
-        guard let start = PeriodRange.interval(for: .week, offset: offset)?.start,
+        let cal = onCallStore.settings.calendar
+        guard let start = PeriodRange.interval(for: .week, offset: offset, calendar: cal)?.start,
               let end   = cal.date(byAdding: .day, value: 6, to: start) else { return "" }
         let dateRange = weekRangeString(start: start, end: end)
         if offset == 0  { return "This Week · \(dateRange)" }

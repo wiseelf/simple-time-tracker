@@ -243,6 +243,8 @@ public enum PeriodRange {
 
 Computes "this week"/"this month"-style date ranges, `offset` periods from the current one (0 = current, -1 = previous, …). Used by `SessionStore`, `OnCallSummaryView`, `StatsView`, `OnCallCalendarGrid`, `ScheduleTab`, and `ReportPickerSheet` instead of each recomputing week/month boundaries independently.
 
+Week-range call sites pass `OnCallSettings.calendar` (`Calendar.current` with `firstWeekday` set from `weekStartsOnMonday`) rather than the default `.current`, so "This Week" respects the Settings toggle instead of the system locale's first weekday.
+
 ### `StatsView`
 
 - **Week view** — bar chart with one row per day (Mon–Sun). Today's bar is full accent color; other days are dimmed. Tapping a row with data opens the session detail panel for that day.
