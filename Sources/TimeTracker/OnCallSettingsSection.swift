@@ -270,12 +270,13 @@ struct SettingsView: View {
         let response = appDelegate?.withPanelLowered { alert.runModal() } ?? alert.runModal()
         switch response {
         case .alertFirstButtonReturn:
-            if TimerManager.shared.isRunning { TimerManager.shared.stop() }
-            try? SessionStore.shared.importSessions(from: data)
-            TimerManager.shared.reloadFromStore()
+            TimerManager.shared.resyncAfterExternalMutation {
+                try? SessionStore.shared.importSessions(from: data)
+            }
         case .alertSecondButtonReturn:
-            SessionStore.shared.replaceAll(with: imported)
-            TimerManager.shared.reloadFromStore()
+            TimerManager.shared.resyncAfterExternalMutation {
+                SessionStore.shared.replaceAll(with: imported)
+            }
         default:
             break
         }

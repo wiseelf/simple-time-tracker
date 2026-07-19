@@ -134,6 +134,7 @@ Owns the `NSStatusItem`, the main `NSPanel` popup, the session detail panel, and
 | `isRunningOnCall` | `Bool` published property — `true` while the current timer segment is tagged as on-call active |
 | `loadTodayTime()` | Called once at launch to seed `elapsedSeconds` with today's saved total and register the midnight day-change observer |
 | `resyncFromStore()` | Resyncs elapsed/accumulated/saved counters from stored sessions without stopping the timer; call after any session edit or delete |
+| `resyncAfterExternalMutation(_:)` | Stops the timer (saving any in-progress segment) if running, runs the given closure against `SessionStore`, then resyncs from the store; call for any external mutation (backup import, replace-all) so stop → mutate → reload can't be ordered wrong |
 
 ### `SessionStore` (singleton)
 
