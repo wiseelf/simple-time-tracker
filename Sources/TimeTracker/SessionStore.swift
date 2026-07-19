@@ -59,7 +59,8 @@ class SessionStore: ObservableObject {
     }
 
     func sessions(weekOffset: Int) -> [TimeSession] {
-        guard let interval = PeriodRange.interval(for: .week, offset: weekOffset) else { return [] }
+        let calendar = OnCallStore.shared.settings.calendar
+        guard let interval = PeriodRange.interval(for: .week, offset: weekOffset, calendar: calendar) else { return [] }
         return sessions.filter { $0.startDate >= interval.start && $0.startDate < interval.end }
     }
 

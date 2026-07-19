@@ -172,20 +172,20 @@ struct OnCallSummaryView: View {
     // MARK: - Period computation
 
     private var periodDates: [Date] {
-        PeriodRange.days(for: period == .week ? .week : .month, offset: offset)
+        PeriodRange.days(for: period == .week ? .week : .month, offset: offset, calendar: store.settings.calendar)
     }
 
     private var periodLabel: String {
-        let cal = Calendar.current
+        let cal = store.settings.calendar
         if period == .week {
-            guard let start = PeriodRange.interval(for: .week, offset: offset)?.start,
+            guard let start = PeriodRange.interval(for: .week, offset: offset, calendar: cal)?.start,
                   let end   = cal.date(byAdding: .day, value: 6, to: start) else { return "" }
             let sm = cal.component(.month, from: start), em = cal.component(.month, from: end)
             let sd = cal.component(.day,   from: start), ed = cal.component(.day,   from: end)
             if sm == em { return "\(start.formatted(.dateTime.month(.abbreviated))) \(sd)–\(ed)" }
             return "\(start.formatted(.dateTime.month(.abbreviated).day())) – \(end.formatted(.dateTime.month(.abbreviated).day()))"
         } else {
-            guard let date = PeriodRange.interval(for: .month, offset: offset)?.start else { return "" }
+            guard let date = PeriodRange.interval(for: .month, offset: offset, calendar: cal)?.start else { return "" }
             return date.formatted(.dateTime.month(.wide).year())
         }
     }
