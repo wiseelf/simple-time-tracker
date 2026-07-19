@@ -67,9 +67,12 @@ class OnCallStore: ObservableObject {
         persist()
     }
 
+    /// Deletes `rule` and any schedule exceptions that override it — exceptions predating
+    /// rule-scoping (`ruleID == nil`) are treated as belonging to it too. Exceptions tagged
+    /// to a different rule are left untouched.
     func deleteRule(_ rule: RecurrenceRule) {
         rules.removeAll { $0.id == rule.id }
-        exceptions.removeAll()
+        exceptions.removeAll { $0.isOwned(by: rule) }
         persist()
     }
 

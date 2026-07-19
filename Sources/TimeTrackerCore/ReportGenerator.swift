@@ -134,7 +134,7 @@ public enum ReportGenerator {
             let rate = settings.incomeTrackingEnabled
                 ? OnCallBilling.rate(on: date, settings: settings)
                 : nil
-            let regularAmount = rate.map { Double(regularSecs) / 3600.0 * $0 }
+            let regularAmount = rate.map { OnCallBilling.regularIncome(seconds: regularSecs, rate: $0) }
 
             let passiveMins = OnCallBilling.passiveMinutes(
                 on: date, sessions: daySessions,
@@ -143,8 +143,8 @@ public enum ReportGenerator {
                 on: date, sessions: daySessions,
                 rotations: rotations, rules: rules, exceptions: exceptions, settings: settings)
 
-            let passiveAmount = rate.map { Double(passiveMins) / 60.0 * $0 * settings.passiveMultiplier }
-            let activeAmount  = rate.map { Double(activeMins)  / 60.0 * $0 * settings.activeMultiplier }
+            let passiveAmount = rate.map { OnCallBilling.passiveIncome(minutes: passiveMins, rate: $0, settings: settings) }
+            let activeAmount  = rate.map { OnCallBilling.activeIncome(minutes: activeMins, rate: $0, settings: settings) }
 
             guard regularSecs > 0 || passiveMins > 0 || activeMins > 0 else { return nil }
             return ReportRow(

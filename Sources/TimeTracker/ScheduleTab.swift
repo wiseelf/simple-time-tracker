@@ -7,6 +7,7 @@ struct ScheduleTab: View {
     @State private var selectedDate:   Date? = nil
     @State private var showingAddRule: Bool  = false
     @State private var editingRule:    RecurrenceRule? = nil
+    @State private var ruleToDelete:   RecurrenceRule? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +52,18 @@ struct ScheduleTab: View {
         .sheet(item: $editingRule) { rule in
             RuleEditSheet(rule: rule) { store.updateRule($0) }
         }
+        .confirmationDialog(
+            "Delete this rule?",
+            isPresented: Binding(get: { ruleToDelete != nil }, set: { if !$0 { ruleToDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Rule", role: .destructive) {
+                if let rule = ruleToDelete { store.deleteRule(rule) }
+                ruleToDelete = nil
+            }
+        } message: {
+            Text("This also removes any day overrides made for it.")
+        }
     }
 
     private func ruleRow(_ rule: RecurrenceRule) -> some View {
@@ -66,7 +79,7 @@ struct ScheduleTab: View {
                 Image(systemName: "pencil").font(.system(size: 11))
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
-            Button { store.deleteRule(rule) } label: {
+            Button { ruleToDelete = rule } label: {
                 Image(systemName: "trash").font(.system(size: 11))
             }
             .buttonStyle(.plain).foregroundStyle(.red.opacity(0.7))
@@ -109,9 +122,7 @@ struct ScheduleTab: View {
     // MARK: - Helpers
 
     private var monthLabel: String {
-        let cal = Calendar.current
-        guard let base = cal.dateInterval(of: .month, for: .now)?.start,
-              let date = cal.date(byAdding: .month, value: monthOffset, to: base) else { return "" }
+        guard let date = PeriodRange.interval(for: .month, offset: monthOffset)?.start else { return "" }
         return date.formatted(.dateTime.month(.wide).year())
     }
 
@@ -178,9 +189,10 @@ private struct DayDetailPanel: View {
                             if rw != nil { store.removeException(for: date) }
                             else { store.upsertException(ScheduleException(date: date,
                                        kind: .override(startMinute: rule.startMinute,
-                                                       endMinute: rule.endMinute))) }
+                                                       endMinute: rule.endMinute),
+                                       ruleID: rule.id)) }
                         } else {
-                            if rw != nil { store.upsertException(ScheduleException(date: date, kind: .skip)) }
+                            if rw != nil { store.upsertException(ScheduleException(date: date, kind: .skip, ruleID: rule.id)) }
                             else { store.removeException(for: date) }
                         }
                     }
@@ -194,14 +206,16 @@ private struct DayDetailPanel: View {
                     MinutePickerField(minutes: Binding(
                         get: { resolved?.0 ?? w.0 },
                         set: { store.upsertException(ScheduleException(date: date,
-                                   kind: .override(startMinute: $0, endMinute: resolved?.1 ?? w.1))) }
+                                   kind: .override(startMinute: $0, endMinute: resolved?.1 ?? w.1),
+                                   ruleID: store.rules.first?.id)) }
                     ))
                     .frame(width: 86, height: 22)
                     Text("To").font(.system(size: 11)).foregroundStyle(.secondary)
                     MinutePickerField(minutes: Binding(
                         get: { resolved?.1 ?? w.1 },
                         set: { store.upsertException(ScheduleException(date: date,
-                                   kind: .override(startMinute: resolved?.0 ?? w.0, endMinute: $0))) }
+                                   kind: .override(startMinute: resolved?.0 ?? w.0, endMinute: $0),
+                                   ruleID: store.rules.first?.id)) }
                     ))
                     .frame(width: 86, height: 22)
                 }

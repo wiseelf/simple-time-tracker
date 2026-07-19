@@ -172,39 +172,20 @@ struct OnCallSummaryView: View {
     // MARK: - Period computation
 
     private var periodDates: [Date] {
-        let cal = Calendar.current
-        if period == .week {
-            guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-                  let start     = cal.date(byAdding: .weekOfYear, value: offset, to: weekStart)
-            else { return [] }
-            return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
-        } else {
-            guard let monthStart = cal.dateInterval(of: .month, for: .now)?.start,
-                  let start      = cal.date(byAdding: .month, value: offset, to: monthStart),
-                  let monthEnd   = cal.date(byAdding: .month, value: 1, to: start)
-            else { return [] }
-            var d = start, all: [Date] = []
-            while d < monthEnd {
-                all.append(d)
-                d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86400)
-            }
-            return all
-        }
+        PeriodRange.days(for: period == .week ? .week : .month, offset: offset)
     }
 
     private var periodLabel: String {
         let cal = Calendar.current
         if period == .week {
-            guard let base  = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-                  let start = cal.date(byAdding: .weekOfYear, value: offset, to: base),
+            guard let start = PeriodRange.interval(for: .week, offset: offset)?.start,
                   let end   = cal.date(byAdding: .day, value: 6, to: start) else { return "" }
             let sm = cal.component(.month, from: start), em = cal.component(.month, from: end)
             let sd = cal.component(.day,   from: start), ed = cal.component(.day,   from: end)
             if sm == em { return "\(start.formatted(.dateTime.month(.abbreviated))) \(sd)–\(ed)" }
             return "\(start.formatted(.dateTime.month(.abbreviated).day())) – \(end.formatted(.dateTime.month(.abbreviated).day()))"
         } else {
-            guard let base = cal.dateInterval(of: .month, for: .now)?.start,
-                  let date = cal.date(byAdding: .month, value: offset, to: base) else { return "" }
+            guard let date = PeriodRange.interval(for: .month, offset: offset)?.start else { return "" }
             return date.formatted(.dateTime.month(.wide).year())
         }
     }
@@ -212,8 +193,8 @@ struct OnCallSummaryView: View {
     private func incomeFor(day: Date, passive: Int, active: Int) -> Double {
         guard store.settings.incomeTrackingEnabled,
               let rate = OnCallBilling.rate(on: day, settings: store.settings) else { return 0 }
-        return Double(passive) / 60.0 * rate * store.settings.passiveMultiplier
-             + Double(active)  / 60.0 * rate * store.settings.activeMultiplier
+        return OnCallBilling.onCallIncome(passiveMinutes: passive, activeMinutes: active,
+                                          rate: rate, settings: store.settings)
     }
 
     private func formatMins(_ m: Int) -> String {

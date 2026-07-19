@@ -110,7 +110,7 @@ struct StatsView: View {
                             // Use the midpoint of the segment (day+3) so edge days that
                             // belong to a neighbouring calendar week don't mislead us
                             let mid = cal.date(byAdding: .day, value: 3, to: row.id) ?? row.id
-                            guard let thisWeekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
+                            guard let thisWeekStart = PeriodRange.interval(for: .week, offset: 0)?.start,
                                   let rowWeekStart  = cal.dateInterval(of: .weekOfYear, for: mid)?.start
                             else { return }
                             let days = cal.dateComponents([.day], from: thisWeekStart, to: rowWeekStart).day ?? 0
@@ -215,22 +215,9 @@ struct StatsView: View {
         let rotations = onCallStore.rotations
         guard settings.incomeTrackingEnabled else { return PeriodIncome() }
 
-        let dates: [Date]
-        let cal = Calendar.current
-        if period == .week {
-            guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-                  let start = cal.date(byAdding: .weekOfYear, value: weekOffset, to: weekStart)
-            else { return PeriodIncome() }
-            dates = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
-        } else {
-            guard let monthStart = cal.dateInterval(of: .month, for: .now)?.start,
-                  let start = cal.date(byAdding: .month, value: monthOffset, to: monthStart),
-                  let monthEnd = cal.date(byAdding: .month, value: 1, to: start)
-            else { return PeriodIncome() }
-            var d = start, all: [Date] = []
-            while d < monthEnd { all.append(d); d = cal.date(byAdding: .day, value: 1, to: d) ?? d.addingTimeInterval(86400) }
-            dates = all
-        }
+        let dates = PeriodRange.days(for: period == .week ? .week : .month,
+                                     offset: period == .week ? weekOffset : monthOffset)
+        guard !dates.isEmpty else { return PeriodIncome() }
 
         var result = PeriodIncome()
         for day in dates {
@@ -238,7 +225,7 @@ struct StatsView: View {
             let sessions = store.sessions(on: day)
 
             let regularSecs = sessions.filter { !$0.isOnCallActive }.reduce(0) { $0 + $1.duration }
-            result.regular += Double(regularSecs) / 3600.0 * rate
+            result.regular += OnCallBilling.regularIncome(seconds: regularSecs, rate: rate)
 
             let passiveMins = OnCallBilling.passiveMinutes(on: day, sessions: sessions, rotations: rotations,
                                                            rules: onCallStore.rules, exceptions: onCallStore.exceptions,
@@ -246,8 +233,8 @@ struct StatsView: View {
             let activeMins  = OnCallBilling.activeMinutesWithinBillable(on: day, sessions: sessions, rotations: rotations,
                                                                         rules: onCallStore.rules, exceptions: onCallStore.exceptions,
                                                                         settings: settings)
-            result.onCall += (Double(passiveMins) / 60.0 * rate * settings.passiveMultiplier)
-                           + (Double(activeMins) / 60.0 * rate * settings.activeMultiplier)
+            result.onCall += OnCallBilling.onCallIncome(passiveMinutes: passiveMins, activeMinutes: activeMins,
+                                                        rate: rate, settings: settings)
         }
         return result
     }
@@ -289,9 +276,7 @@ struct StatsView: View {
 
     private var weekRows: [DayRow] {
         let cal = Calendar.current
-        guard let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-              let start = cal.date(byAdding: .weekOfYear, value: weekOffset, to: weekStart)
-        else { return [] }
+        guard let start = PeriodRange.interval(for: .week, offset: weekOffset)?.start else { return [] }
         return (0..<7).compactMap { i in
             guard let day = cal.date(byAdding: .day, value: i, to: start) else { return nil }
             let daySessions = store.sessions(on: day)
@@ -306,10 +291,8 @@ struct StatsView: View {
 
     private var monthWeekRows: [WeekRow] {
         let cal = Calendar.current
-        guard let monthStart = cal.dateInterval(of: .month, for: .now)?.start,
-              let start = cal.date(byAdding: .month, value: monthOffset, to: monthStart),
-              let monthEnd = cal.date(byAdding: .month, value: 1, to: start)
-        else { return [] }
+        guard let interval = PeriodRange.interval(for: .month, offset: monthOffset) else { return [] }
+        let start = interval.start, monthEnd = interval.end
         var rows: [WeekRow] = []
         var cursor = start
         while cursor < monthEnd {
@@ -364,8 +347,7 @@ struct StatsView: View {
 
     private func weekLabel(_ offset: Int) -> String {
         let cal = Calendar.current
-        guard let base  = cal.dateInterval(of: .weekOfYear, for: .now)?.start,
-              let start = cal.date(byAdding: .weekOfYear, value: offset, to: base),
+        guard let start = PeriodRange.interval(for: .week, offset: offset)?.start,
               let end   = cal.date(byAdding: .day, value: 6, to: start) else { return "" }
         let dateRange = weekRangeString(start: start, end: end)
         if offset == 0  { return "This Week · \(dateRange)" }
@@ -382,9 +364,7 @@ struct StatsView: View {
     }
 
     private func monthLabel(_ offset: Int) -> String {
-        let cal = Calendar.current
-        guard let base = cal.dateInterval(of: .month, for: .now)?.start,
-              let date = cal.date(byAdding: .month, value: offset, to: base) else { return "" }
+        guard let date = PeriodRange.interval(for: .month, offset: offset)?.start else { return "" }
         let name = date.formatted(.dateTime.month(.wide).year())
         if offset == 0  { return "This Month · \(date.formatted(.dateTime.month(.abbreviated).year()))" }
         if offset == -1 { return "Last Month · \(date.formatted(.dateTime.month(.abbreviated).year()))" }

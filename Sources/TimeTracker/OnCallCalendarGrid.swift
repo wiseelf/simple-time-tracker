@@ -40,10 +40,8 @@ struct OnCallCalendarGrid: View {
 
     private var cells: [CalendarCell] {
         let cal = Calendar.current
-        guard let base       = cal.dateInterval(of: .month, for: .now)?.start,
-              let monthStart = cal.date(byAdding: .month, value: monthOffset, to: base),
-              let monthEnd   = cal.date(byAdding: .month, value: 1, to: monthStart)
-        else { return [] }
+        guard let interval = PeriodRange.interval(for: .month, offset: monthOffset) else { return [] }
+        let monthStart = interval.start, monthEnd = interval.end
 
         let weekday = cal.component(.weekday, from: monthStart)
         let leadingPad = weekStartsOnMonday ? (weekday - 2 + 7) % 7 : weekday - 1

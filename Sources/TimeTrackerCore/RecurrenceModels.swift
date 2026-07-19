@@ -69,7 +69,18 @@ public struct ScheduleException: Codable, Identifiable {
 
     public var kind: ExceptionKind
 
-    public init(id: UUID = UUID(), date: Date, kind: ExceptionKind) {
-        self.id = id; self.date = date; self.kind = kind
+    /// The rule this exception overrides. Nil for exceptions persisted before rule scoping
+    /// was introduced — treated as belonging to whichever rule is deleted (see
+    /// `OnCallStore.deleteRule`), matching the original unscoped-wipe behavior for old data.
+    public var ruleID: UUID?
+
+    public init(id: UUID = UUID(), date: Date, kind: ExceptionKind, ruleID: UUID? = nil) {
+        self.id = id; self.date = date; self.kind = kind; self.ruleID = ruleID
+    }
+
+    /// True if this exception should be removed when `rule` is deleted — either it
+    /// explicitly overrides `rule`, or predates rule-scoping (`ruleID == nil`).
+    public func isOwned(by rule: RecurrenceRule) -> Bool {
+        ruleID == nil || ruleID == rule.id
     }
 }

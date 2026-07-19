@@ -62,7 +62,8 @@ simple-time-tracker/
 │   │   ├── Extensions.swift             # String.trimmedOrNil
 │   │   ├── OnCallModels.swift           # OnCallRotationBlock, DaySchedule, OnCallSettings, …
 │   │   ├── RecurrenceModels.swift       # RecurrenceRule, ScheduleException, day-generation logic
-│   │   ├── OnCallBilling.swift          # Billable/passive/active minute computation + rate lookup
+│   │   ├── OnCallBilling.swift          # Billable/passive/active minute + income computation, rate lookup
+│   │   ├── PeriodRange.swift            # Week/month date-range computation, offset from the current period
 │   │   └── ReportGenerator.swift        # Period report data model + Markdown formatter
 │   └── TimeTracker/                     # macOS app executable
 │       ├── CoreImport.swift             # @_exported import TimeTrackerCore
@@ -91,6 +92,7 @@ simple-time-tracker/
 │       └── Assets.xcassets/            # App icon asset catalog
 └── Tests/TimeTrackerTests/
     ├── OnCallBillingTests.swift         # Swift Testing tests for core billing logic
+    ├── PeriodRangeTests.swift           # Tests for week/month date-range computation
     ├── RecurrenceRuleTests.swift        # Tests for RecurrenceRule day-generation and exceptions
     └── RecurrenceBillingTests.swift     # Tests for billing with recurrence rules
 ```
@@ -196,7 +198,7 @@ Three-tab layout (Week / Month / Schedule) using a `.segmented` `Picker`. Owns i
 
 Manages the recurrence rule workflow:
 
-- **Rule row** — shows the active `RecurrenceRule` (kind label + time window) with edit/delete buttons. A `+` button appears when no rule exists; tapping opens `RuleEditSheet`.
+- **Rule row** — shows the active `RecurrenceRule` (kind label + time window) with edit/delete buttons. A `+` button appears when no rule exists; tapping opens `RuleEditSheet`. Deleting asks for confirmation, since it also removes any `ScheduleException`s that override that rule.
 - **Calendar grid** — `OnCallCalendarGrid` renders the current month; on-call days (as resolved from the rule + exceptions) are highlighted. A month navigation header lets the user browse past/future months.
 - **Day detail panel** — tapping a calendar day opens an inline panel showing the date, an on-call toggle, and (when on-call) hour pickers for start/end. Changes are stored as `ScheduleException`s. A "Reset to rule defaults" link removes the exception for that day.
 
@@ -222,8 +224,22 @@ public struct ScheduleException: Codable, Identifiable {
     public var date: Date
     public enum ExceptionKind: Codable { case skip; case override(startMinute:endMinute:) }
     public var kind: ExceptionKind
+    public var ruleID: UUID?       // nil = predates rule scoping, treated as owned by any rule
+    public func isOwned(by: RecurrenceRule) -> Bool
 }
 ```
+
+### `PeriodRange` (in `TimeTrackerCore`)
+
+```swift
+public enum PeriodRange {
+    public enum Period { case week, month }
+    public static func interval(for: Period, offset: Int, calendar: Calendar = .current) -> DateInterval?
+    public static func days(for: Period, offset: Int, calendar: Calendar = .current) -> [Date]
+}
+```
+
+Computes "this week"/"this month"-style date ranges, `offset` periods from the current one (0 = current, -1 = previous, …). Used by `SessionStore`, `OnCallSummaryView`, `StatsView`, `OnCallCalendarGrid`, `ScheduleTab`, and `ReportPickerSheet` instead of each recomputing week/month boundaries independently.
 
 ### `StatsView`
 
