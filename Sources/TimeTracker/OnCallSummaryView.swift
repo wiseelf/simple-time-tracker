@@ -150,11 +150,8 @@ struct OnCallSummaryView: View {
                 rules: store.rules,
                 exceptions: store.exceptions,
                 settings: store.settings)
-            let active = OnCallBilling.activeMinutesWithinBillable(
+            let active = OnCallBilling.activeMinutes(
                 on: day, sessions: sessions,
-                rotations: store.rotations,
-                rules: store.rules,
-                exceptions: store.exceptions,
                 settings: store.settings)
             let label: String
             if period == .week {

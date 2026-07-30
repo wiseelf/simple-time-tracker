@@ -107,37 +107,50 @@ struct OnCallBillingTests {
         #expect(OnCallBilling.billableMinutes(on: date(2026, 6, 6), rotations: [satRotation], settings: settings) == 1440)
     }
 
-    // MARK: - activeMinutesWithinBillable
+    // MARK: - activeMinutes
 
     @Test func activeMinutes_noOnCallSessions() {
         let settings = OnCallSettings(nonBillableRules: [nonBillableWeekdayRule])
         let s = session(on: date(2026, 6, 2), startMinute: 0, durationMinutes: 60, isOnCallActive: false)
-        #expect(OnCallBilling.activeMinutesWithinBillable(on: date(2026, 6, 2), sessions: [s],
-                                                          rotations: [weekdayAllDayBlock], settings: settings) == 0)
+        #expect(OnCallBilling.activeMinutes(on: date(2026, 6, 2), sessions: [s], settings: settings) == 0)
     }
 
     @Test func activeMinutes_sessionFullyInsideBillable() {
-        // Billable on Tue: 0–480 and 1080–1440. Session 0–60 is inside billable.
+        // Session 0–60 doesn't overlap the 8am–6pm non-billable window.
         let settings = OnCallSettings(nonBillableRules: [nonBillableWeekdayRule])
         let s = session(on: date(2026, 6, 2), startMinute: 0, durationMinutes: 60, isOnCallActive: true)
-        #expect(OnCallBilling.activeMinutesWithinBillable(on: date(2026, 6, 2), sessions: [s],
-                                                          rotations: [weekdayAllDayBlock], settings: settings) == 60)
+        #expect(OnCallBilling.activeMinutes(on: date(2026, 6, 2), sessions: [s], settings: settings) == 60)
     }
 
-    @Test func activeMinutes_sessionClippedAtBillableBoundary() {
-        // Billable ends at 480. Session 420–540 clips to 420–480 = 60 min.
+    @Test func activeMinutes_sessionClippedAtNonBillableBoundary() {
+        // Non-billable is 8am–6pm (480–1080). Session 420–540 overlaps 480–540 = 60 min non-billable,
+        // leaving 60 of its 120 minutes as active.
         let settings = OnCallSettings(nonBillableRules: [nonBillableWeekdayRule])
         let s = session(on: date(2026, 6, 2), startMinute: 420, durationMinutes: 120, isOnCallActive: true)
-        #expect(OnCallBilling.activeMinutesWithinBillable(on: date(2026, 6, 2), sessions: [s],
-                                                          rotations: [weekdayAllDayBlock], settings: settings) == 60)
+        #expect(OnCallBilling.activeMinutes(on: date(2026, 6, 2), sessions: [s], settings: settings) == 60)
     }
 
     @Test func activeMinutes_sessionInsideNonBillable() {
         // Session during 8am–6pm (non-billable) → 0 active minutes
         let settings = OnCallSettings(nonBillableRules: [nonBillableWeekdayRule])
         let s = session(on: date(2026, 6, 2), startMinute: 540, durationMinutes: 60, isOnCallActive: true)
-        #expect(OnCallBilling.activeMinutesWithinBillable(on: date(2026, 6, 2), sessions: [s],
-                                                          rotations: [weekdayAllDayBlock], settings: settings) == 0)
+        #expect(OnCallBilling.activeMinutes(on: date(2026, 6, 2), sessions: [s], settings: settings) == 0)
+    }
+
+    @Test func activeMinutes_unscheduledEscalationCountsInFull() {
+        // No rotation covers this day at all (ad hoc escalation, not a scheduled on-call shift).
+        // It should still count as active on-call time.
+        let settings = OnCallSettings()
+        let s = session(on: date(2026, 6, 2), startMinute: 0, durationMinutes: 113, isOnCallActive: true)
+        #expect(OnCallBilling.activeMinutes(on: date(2026, 6, 2), sessions: [s], settings: settings) == 113)
+    }
+
+    @Test func activeMinutes_unscheduledEscalationExcludesNonBillableOverlap() {
+        // Ad hoc escalation during normal working hours (8am–6pm) is already compensated
+        // by the regular job, so it shouldn't count as on-call active time either.
+        let settings = OnCallSettings(nonBillableRules: [nonBillableWeekdayRule])
+        let s = session(on: date(2026, 6, 2), startMinute: 540, durationMinutes: 60, isOnCallActive: true)
+        #expect(OnCallBilling.activeMinutes(on: date(2026, 6, 2), sessions: [s], settings: settings) == 0)
     }
 
     // MARK: - passiveMinutes
