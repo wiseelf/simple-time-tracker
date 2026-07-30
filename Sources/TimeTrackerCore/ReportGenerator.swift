@@ -139,9 +139,8 @@ public enum ReportGenerator {
             let passiveMins = OnCallBilling.passiveMinutes(
                 on: date, sessions: daySessions,
                 rotations: rotations, rules: rules, exceptions: exceptions, settings: settings)
-            let activeMins = OnCallBilling.activeMinutesWithinBillable(
-                on: date, sessions: daySessions,
-                rotations: rotations, rules: rules, exceptions: exceptions, settings: settings)
+            let activeMins = OnCallBilling.activeMinutes(
+                on: date, sessions: daySessions, settings: settings)
 
             let passiveAmount = rate.map { OnCallBilling.passiveIncome(minutes: passiveMins, rate: $0, settings: settings) }
             let activeAmount  = rate.map { OnCallBilling.activeIncome(minutes: activeMins, rate: $0, settings: settings) }

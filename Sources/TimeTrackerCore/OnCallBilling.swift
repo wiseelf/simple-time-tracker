@@ -12,28 +12,32 @@ public enum OnCallBilling {
             .reduce(0) { $0 + ($1.1 - $1.0) }
     }
 
-    public static func activeMinutesWithinBillable(on date: Date,
-                                                    sessions: [TimeSession],
-                                                    rotations: [OnCallRotationBlock],
-                                                    rules: [RecurrenceRule] = [],
-                                                    exceptions: [ScheduleException] = [],
-                                                    settings: OnCallSettings) -> Int {
+    /// Minutes of on-call-active session time, whether or not the session falls inside a
+    /// scheduled rotation window — an unscheduled escalation still counts as active on-call
+    /// time. Time that overlaps a non-billable rule (e.g. normal working hours) is excluded,
+    /// since that time is already compensated by the regular job.
+    public static func activeMinutes(on date: Date,
+                                      sessions: [TimeSession],
+                                      settings: OnCallSettings) -> Int {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: date)
-        let billableRanges = billableRangesList(on: date, rotations: rotations, rules: rules,
-                                                exceptions: exceptions, settings: settings)
-        guard !billableRanges.isEmpty else { return 0 }
+        let weekday = cal.component(.weekday, from: date)
+        let nonBillable = settings.nonBillableRules
+            .filter { $0.daysOfWeek.contains(weekday) }
+            .map    { ($0.startMinute, $0.endMinute) }
 
         var totalSeconds = 0
         for session in sessions where session.isOnCallActive {
             guard cal.isDate(session.startDate, inSameDayAs: date) else { continue }
             let sStartSec = Int(session.startDate.timeIntervalSince(dayStart))
             let sEndSec   = sStartSec + session.duration
-            for (bStart, bEnd) in billableRanges {
-                let clippedStart = max(sStartSec, bStart * 60)
-                let clippedEnd   = min(sEndSec,   bEnd   * 60)
-                if clippedEnd > clippedStart { totalSeconds += clippedEnd - clippedStart }
+            var sessionSeconds = sEndSec - sStartSec
+            for (nbStart, nbEnd) in nonBillable {
+                let clippedStart = max(sStartSec, nbStart * 60)
+                let clippedEnd   = min(sEndSec,   nbEnd   * 60)
+                if clippedEnd > clippedStart { sessionSeconds -= (clippedEnd - clippedStart) }
             }
+            totalSeconds += max(0, sessionSeconds)
         }
         return totalSeconds / 60
     }
@@ -46,9 +50,7 @@ public enum OnCallBilling {
                                        settings: OnCallSettings) -> Int {
         let billable = billableMinutes(on: date, rotations: rotations, rules: rules,
                                        exceptions: exceptions, settings: settings)
-        let active   = activeMinutesWithinBillable(on: date, sessions: sessions,
-                                                   rotations: rotations, rules: rules,
-                                                   exceptions: exceptions, settings: settings)
+        let active   = activeMinutes(on: date, sessions: sessions, settings: settings)
         return max(0, billable - active)
     }
 

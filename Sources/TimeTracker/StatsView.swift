@@ -90,7 +90,7 @@ struct StatsView: View {
                     barRow(label: row.label, seconds: row.seconds, onCallActiveSeconds: row.onCallActiveSeconds,
                            maxSeconds: maxWeekSeconds, highlight: row.isToday, labelWidth: 30)
                         .onTapGesture {
-                            guard row.seconds > 0 else { return }
+                            guard row.seconds > 0 || row.onCallActiveSeconds > 0 else { return }
                             guard let delegate = appDelegate else { return }
                             if delegate.isShowingDetail,
                                Calendar.current.isDate(delegate.detailState.date, inSameDayAs: row.id) {
@@ -105,7 +105,7 @@ struct StatsView: View {
                     barRow(label: row.label, seconds: row.seconds, onCallActiveSeconds: row.onCallActiveSeconds,
                            maxSeconds: maxMonthSeconds, highlight: false, labelWidth: 38)
                         .onTapGesture {
-                            guard row.seconds > 0 else { return }
+                            guard row.seconds > 0 || row.onCallActiveSeconds > 0 else { return }
                             let cal = onCallStore.settings.calendar
                             // Use the midpoint of the segment (day+3) so edge days that
                             // belong to a neighbouring calendar week don't mislead us
@@ -143,7 +143,8 @@ struct StatsView: View {
                     if onCallActiveSeconds > 0, maxSeconds > 0 {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(Color.orange.opacity(0.8))
-                            .frame(width: geo.size.width * CGFloat(min(onCallActiveSeconds, seconds)) / CGFloat(maxSeconds))
+                            .frame(width: geo.size.width * CGFloat(onCallActiveSeconds) / CGFloat(maxSeconds))
+                            .offset(x: geo.size.width * CGFloat(seconds) / CGFloat(maxSeconds))
                     }
                 }
             }
@@ -156,7 +157,7 @@ struct StatsView: View {
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(seconds > 0 ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.clear))
+                .foregroundStyle(seconds > 0 || onCallActiveSeconds > 0 ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.clear))
                 .frame(width: 10)
         }
         .padding(.horizontal, 12)
@@ -231,9 +232,7 @@ struct StatsView: View {
             let passiveMins = OnCallBilling.passiveMinutes(on: day, sessions: sessions, rotations: rotations,
                                                            rules: onCallStore.rules, exceptions: onCallStore.exceptions,
                                                            settings: settings)
-            let activeMins  = OnCallBilling.activeMinutesWithinBillable(on: day, sessions: sessions, rotations: rotations,
-                                                                        rules: onCallStore.rules, exceptions: onCallStore.exceptions,
-                                                                        settings: settings)
+            let activeMins  = OnCallBilling.activeMinutes(on: day, sessions: sessions, settings: settings)
             result.onCall += OnCallBilling.onCallIncome(passiveMinutes: passiveMins, activeMinutes: activeMins,
                                                         rate: rate, settings: settings)
         }
@@ -268,9 +267,16 @@ struct StatsView: View {
         let onCallActiveSeconds: Int
     }
 
-    /// Seconds of the currently running segment that haven't been saved to the store yet.
+    /// Seconds of the currently running regular (non on-call) segment not yet saved to the store.
     private var liveExtraSeconds: Int {
-        guard timerManager.isRunning else { return 0 }
+        guard timerManager.isRunning, !timerManager.isRunningOnCall else { return 0 }
+        let stored = store.totalSeconds(in: store.sessions(on: .now))
+        return max(0, timerManager.elapsedSeconds - stored)
+    }
+
+    /// Seconds of the currently running on-call-active segment not yet saved to the store.
+    private var liveExtraOnCallSeconds: Int {
+        guard timerManager.isRunning, timerManager.isRunningOnCall else { return 0 }
         let stored = store.totalSeconds(in: store.sessions(on: .now))
         return max(0, timerManager.elapsedSeconds - stored)
     }
@@ -281,12 +287,14 @@ struct StatsView: View {
         return (0..<7).compactMap { i in
             guard let day = cal.date(byAdding: .day, value: i, to: start) else { return nil }
             let daySessions = store.sessions(on: day)
-            let secs = store.totalSeconds(in: daySessions)
-                + (cal.isDateInToday(day) ? liveExtraSeconds : 0)
+            let isToday = cal.isDateInToday(day)
+            let secs = daySessions.filter { !$0.isOnCallActive }.reduce(0) { $0 + $1.duration }
+                + (isToday ? liveExtraSeconds : 0)
             let onCallSecs = daySessions.filter { $0.isOnCallActive }.reduce(0) { $0 + $1.duration }
+                + (isToday ? liveExtraOnCallSeconds : 0)
             let raw = day.formatted(.dateTime.weekday(.abbreviated))
             return DayRow(id: day, label: String(raw.prefix(3)), seconds: secs,
-                          isToday: cal.isDateInToday(day), onCallActiveSeconds: onCallSecs)
+                          isToday: isToday, onCallActiveSeconds: onCallSecs)
         }
     }
 
@@ -304,9 +312,12 @@ struct StatsView: View {
             var onCallSecs = 0
             while dayCursor < end {
                 let daySessions = store.sessions(on: dayCursor)
-                secs += store.totalSeconds(in: daySessions)
-                if cal.isDateInToday(dayCursor) { secs += liveExtraSeconds }
+                secs += daySessions.filter { !$0.isOnCallActive }.reduce(0) { $0 + $1.duration }
                 onCallSecs += daySessions.filter { $0.isOnCallActive }.reduce(0) { $0 + $1.duration }
+                if cal.isDateInToday(dayCursor) {
+                    secs += liveExtraSeconds
+                    onCallSecs += liveExtraOnCallSeconds
+                }
                 dayCursor = cal.date(byAdding: .day, value: 1, to: dayCursor) ?? dayCursor.addingTimeInterval(86400)
             }
             let sd = cal.component(.day, from: cursor)
@@ -317,8 +328,8 @@ struct StatsView: View {
         return rows
     }
 
-    private var maxWeekSeconds:  Int { weekRows.map(\.seconds).max() ?? 0 }
-    private var maxMonthSeconds: Int { monthWeekRows.map(\.seconds).max() ?? 0 }
+    private var maxWeekSeconds:  Int { weekRows.map { $0.seconds + $0.onCallActiveSeconds }.max() ?? 0 }
+    private var maxMonthSeconds: Int { monthWeekRows.map { $0.seconds + $0.onCallActiveSeconds }.max() ?? 0 }
 
     private var periodTotal: Int {
         period == .week
