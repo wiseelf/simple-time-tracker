@@ -110,8 +110,6 @@ struct ContentView: View {
             Text(manager.formattedTime)
                 .font(.system(size: 34, weight: .thin, design: .monospaced))
                 .foregroundStyle(manager.isRunning ? .primary : Color.gray)
-                .contentTransition(.numericText())
-                .animation(.easeInOut(duration: 0.2), value: manager.elapsedSeconds)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
                 .frame(maxWidth: .infinity)
