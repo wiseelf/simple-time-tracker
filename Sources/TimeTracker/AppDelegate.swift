@@ -95,12 +95,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         button.title = ""
     }
 
-    private func makeButtonImage(time: String, color: NSColor) -> NSImage {
+    private var cachedSymbols: [NSColor: NSImage] = [:]
+
+    /// The timer glyph only depends on `color`, which changes at most a few times per session
+    /// (start/stop/reset) — cache it so the per-second button redraw doesn't re-resolve and
+    /// re-configure the SF Symbol every tick.
+    private func timerSymbol(for color: NSColor) -> NSImage {
+        if let cached = cachedSymbols[color] { return cached }
         let symConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
             .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
         let symbol = NSImage(systemSymbolName: "timer", accessibilityDescription: nil)?
             .withSymbolConfiguration(symConfig) ?? NSImage()
+        cachedSymbols[color] = symbol
+        return symbol
+    }
 
+    private func makeButtonImage(time: String, color: NSColor) -> NSImage {
+        let symbol = timerSymbol(for: color)
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         let attrText = NSAttributedString(string: time, attributes: [
             .font: font,
