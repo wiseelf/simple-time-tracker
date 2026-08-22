@@ -29,6 +29,7 @@ final class TimePickerNSView: NSView {
 
     private var hour: Int = 0
     private var minute: Int = 0
+    private var dayComponents = Calendar.current.dateComponents([.year, .month, .day], from: Date())
     private var segment: Segment = .hour
 
     // "Active" means this picker is receiving input.
@@ -115,6 +116,7 @@ final class TimePickerNSView: NSView {
 
     func setDate(_ date: Date) {
         let cal = Calendar.current
+        dayComponents = cal.dateComponents([.year, .month, .day], from: date)
         let c = cal.dateComponents([.hour, .minute], from: date)
         let h = c.hour ?? 0
         let m = c.minute ?? 0
@@ -254,7 +256,7 @@ final class TimePickerNSView: NSView {
     // MARK: - Helpers
 
     private func emit() {
-        var c = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        var c = dayComponents
         c.hour = hour; c.minute = minute; c.second = 0
         onDateChange?(Calendar.current.date(from: c) ?? Date())
     }
